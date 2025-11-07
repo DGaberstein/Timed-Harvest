@@ -5,8 +5,11 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.timedharvest.TimedHarvestMod;
 import com.timedharvest.config.ModConfig;
+import com.timedharvest.gui.WorldSelectionGui;
 import com.timedharvest.scheduler.ResetScheduler;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.inventory.SimpleInventory;
+import net.minecraft.screen.SimpleNamedScreenHandlerFactory;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.Text;
@@ -26,6 +29,7 @@ public class TimedHarvestCommands {
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             registerCommands(dispatcher);
+            registerPlayerCommands(dispatcher);
         });
     }
 
@@ -113,6 +117,18 @@ public class TimedHarvestCommands {
                         return builder.buildFuture();
                     })
                     .executes(TimedHarvestCommands::disableWorld)))
+            
+            // /timedharvest delete <worldId>
+            .then(CommandManager.literal("delete")
+                .then(CommandManager.argument("worldId", StringArgumentType.word())
+                    .suggests((context, builder) -> {
+                        ModConfig config = TimedHarvestMod.getConfig();
+                        for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
+                            builder.suggest(worldConfig.worldId);
+                        }
+                        return builder.buildFuture();
+                    })
+                    .executes(TimedHarvestCommands::deleteWorld)))
             
             // /timedharvest help
             .then(CommandManager.literal("help")
@@ -215,16 +231,26 @@ public class TimedHarvestCommands {
      * Shows help information.
      */
     private static int showHelp(CommandContext<ServerCommandSource> context) {
+        boolean hasPermission = context.getSource().hasPermissionLevel(2);
+        
         context.getSource().sendFeedback(() -> Text.literal("§6=== Timed Harvest Commands ==="), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest reset <worldId> §f- Manually reset a resource world"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest status [worldId] §f- Show reset status"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest reload §f- Reload configuration"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest tp <worldId> §f- Teleport to resource world"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest spawn §f- Teleport to overworld spawn"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest create <worldId> <dimensionName> <hours> §f- Create new world"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest enable <worldId> §f- Enable a world"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest disable <worldId> §f- Disable a world"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest help §f- Show this help message"), false);
+        
+        if (hasPermission) {
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest reset <worldId> §f- Manually reset a resource world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest status [worldId] §f- Show reset status"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest reload §f- Reload configuration"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest tp <worldId> §f- Teleport to resource world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest spawn §f- Teleport to overworld spawn"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest create <worldId> <dimensionName> <hours> §f- Create new world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest enable <worldId> §f- Enable a world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest disable <worldId> §f- Disable a world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest delete <worldId> §f- Delete a world from config"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest help §f- Show this help message"), false);
+        }
+        
+        // Always show the player command
+        context.getSource().sendFeedback(() -> Text.literal("§e/th §f- Open world teleporter GUI"), false);
+        
         return 1;
     }
 
@@ -412,6 +438,44 @@ public class TimedHarvestCommands {
     }
 
     /**
+     * Deletes a resource world from the configuration and removes its files.
+     */
+    private static int deleteWorld(CommandContext<ServerCommandSource> context) {
+        String worldId = StringArgumentType.getString(context, "worldId");
+        
+        ModConfig.ResourceWorldConfig worldConfig = findWorldConfig(worldId);
+        if (worldConfig == null) {
+            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' not found in configuration!"));
+            return 0;
+        }
+
+        // Kick all players from the world first
+        RegistryKey<World> dimensionKey = RegistryKey.of(RegistryKeys.WORLD, 
+            new Identifier(worldConfig.dimensionName));
+        ServerWorld targetWorld = context.getSource().getServer().getWorld(dimensionKey);
+        
+        if (targetWorld != null) {
+            for (ServerPlayerEntity player : targetWorld.getPlayers()) {
+                ServerWorld overworld = context.getSource().getServer().getOverworld();
+                BlockPos spawnPos = overworld.getSpawnPos();
+                player.teleport(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
+                player.sendMessage(Text.literal("§6[Timed Harvest] §eYou were teleported to spawn because world '" + worldId + "' is being deleted."));
+            }
+        }
+
+        // Remove from configuration
+        TimedHarvestMod.getConfig().resourceWorlds.remove(worldConfig);
+        TimedHarvestMod.getConfig().save();
+        TimedHarvestMod.reloadConfig();
+
+        // Delete world files (will happen on next server restart or manual reset)
+        context.getSource().sendFeedback(() -> Text.literal("§aWorld '" + worldId + "' has been deleted from configuration!"), true);
+        context.getSource().sendFeedback(() -> Text.literal("§eWorld files will be removed on next server restart."), true);
+        
+        return 1;
+    }
+
+    /**
      * Helper method to find a world config by ID.
      */
     private static ModConfig.ResourceWorldConfig findWorldConfig(String worldId) {
@@ -422,4 +486,46 @@ public class TimedHarvestCommands {
         }
         return null;
     }
+
+    /**
+     * Registers player commands that don't require OP permissions.
+     */
+    private static void registerPlayerCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
+        dispatcher.register(CommandManager.literal("th")
+            .executes(TimedHarvestCommands::openWorldGui));
+    }
+
+    /**
+     * Opens the world selection GUI for the player.
+     */
+    private static int openWorldGui(CommandContext<ServerCommandSource> context) {
+        ServerPlayerEntity player;
+        try {
+            player = context.getSource().getPlayer();
+        } catch (Exception e) {
+            context.getSource().sendError(Text.literal("§cThis command can only be used by players!"));
+            return 0;
+        }
+        
+        if (player == null) {
+            context.getSource().sendError(Text.literal("§cThis command can only be used by players!"));
+            return 0;
+        }
+
+        try {
+            // Open the GUI
+            SimpleInventory inventory = new SimpleInventory(27);
+            player.openHandledScreen(new SimpleNamedScreenHandlerFactory(
+                (syncId, playerInventory, playerEntity) -> new WorldSelectionGui(syncId, playerInventory, inventory, player),
+                Text.literal("§6Resource Worlds")
+            ));
+        } catch (Exception e) {
+            TimedHarvestMod.LOGGER.error("Error opening world GUI", e);
+            context.getSource().sendError(Text.literal("§cError opening GUI: " + e.getMessage()));
+            return 0;
+        }
+
+        return 1;
+    }
 }
+
