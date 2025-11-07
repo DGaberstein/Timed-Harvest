@@ -1,0 +1,39 @@
+# Gradle
+.gradle/
+build/
+out/
+classes/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# MacOS
+.DS_Store
+
+# Fabric
+run/
+logs/
+
+# Minecraft
+crash-reports/
+config/
+world/
+saves/
+*.log
+
+# Mod development
+remappedSrc/
+remappedOutput/
