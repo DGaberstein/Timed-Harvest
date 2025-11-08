@@ -270,7 +270,7 @@ src/main/java/com/timedharvest/
 
 ## 📜 License
 
-MIT License - See LICENSE file for details
+[MIT License](https://github.com/DGaberstein/Timed-Harvest/blob/main/LICENSE) – See LICENSE file for details
 
 
 ## 📚 Additional Documentation
@@ -295,18 +295,19 @@ The following Markdown files provide extra technical and implementation details:
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit pull requests.
+Contributions are welcome! Please feel free to submit [pull requests](https://github.com/DGaberstein/Timed-Harvest/pulls).
 
 ## 📞 Support
 
 - **Issues**: [GitHub Issues](https://github.com/DGaberstein/Timed-Harvest/issues)
 - **Wiki**: [GitHub Wiki](https://github.com/DGaberstein/Timed-Harvest/wiki)
 
+
 ## 🙏 Credits
 
 Inspired by:
-- **Resource World** mod - World management concepts
-- **Command Scheduler** mod - Scheduling functionality
+- [**Resource World** mod](https://github.com/CodeOfArdonia/ResourceWorld) – World management concepts
+- [**Command Scheduler** mod](https://github.com/wPoizon/CommandScheduler-mod) – Scheduling functionality
 
 Built with ❤️ using [Fabric](https://fabricmc.net/)
 
