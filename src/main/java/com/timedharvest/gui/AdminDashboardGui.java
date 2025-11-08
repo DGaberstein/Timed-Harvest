@@ -21,11 +21,20 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import java.util.List;
-
 /**
  * Admin Dashboard GUI for managing resource worlds.
  */
 public class AdminDashboardGui extends ScreenHandler {
+
+    @Override
+    public boolean canUse(PlayerEntity player) {
+        return player.hasPermissionLevel(2); // Admin only;
+    }
+
+    @Override
+    public ItemStack quickMove(PlayerEntity player, int slot) {
+        return ItemStack.EMPTY; // Disable shift-clicking;
+    }
     private final Inventory inventory;
     private int currentPage = 0;
     private static final int WORLDS_PER_PAGE = 7; // Leave room for navigation and actions
@@ -33,6 +42,7 @@ public class AdminDashboardGui extends ScreenHandler {
     public AdminDashboardGui(int syncId, PlayerInventory playerInventory) {
         this(syncId, playerInventory, new SimpleInventory(54), (ServerPlayerEntity) playerInventory.player);
     }
+    // ...existing code...
 
     public AdminDashboardGui(int syncId, PlayerInventory playerInventory, Inventory inventory, ServerPlayerEntity player) {
         super(ScreenHandlerType.GENERIC_9X6, syncId);
@@ -68,11 +78,11 @@ public class AdminDashboardGui extends ScreenHandler {
 
     private void populateInventory() {
         inventory.clear();
-        
+
         List<ModConfig.ResourceWorldConfig> worlds = TimedHarvestMod.getConfig().resourceWorlds;
         int totalWorlds = worlds.size();
         int totalPages = (int) Math.ceil((double) totalWorlds / WORLDS_PER_PAGE);
-        
+
         // Title bar (row 0)
         for (int i = 0; i < 9; i++) {
             ItemStack pane = new ItemStack(Items.YELLOW_STAINED_GLASS_PANE);
@@ -82,24 +92,24 @@ public class AdminDashboardGui extends ScreenHandler {
             nbt.put("display", display);
             inventory.setStack(i, pane);
         }
-        
-        // World list (rows 1-4, slots 9-44)
+
+        // World list (rows 1-4, slots 10-44, only odd columns 1,3,5,7)
         int startIndex = currentPage * WORLDS_PER_PAGE;
         int endIndex = Math.min(startIndex + WORLDS_PER_PAGE, totalWorlds);
-        
-        int slot = 10; // Start at slot 10 (row 2, col 2) for better layout
-        for (int i = startIndex; i < endIndex; i++) {
-            ModConfig.ResourceWorldConfig worldConfig = worlds.get(i);
-            ItemStack worldItem = createWorldManagementItem(worldConfig);
-            inventory.setStack(slot, worldItem);
-            slot += 2; // Space out items for better visibility
-            
-            // Move to next row after 4 items
-            if (slot % 9 >= 8) {
-                slot = slot - (slot % 9) + 9 + 1;
+        int worldsPlaced = 0;
+        outer:
+        for (int row = 0; row < 4; row++) {
+            for (int col = 1; col <= 7; col += 2) { // Only odd columns
+                int slot = 10 + row * 9 + col;
+                int worldIdx = startIndex + worldsPlaced;
+                if (worldIdx >= endIndex) break outer;
+                ModConfig.ResourceWorldConfig worldConfig = worlds.get(worldIdx);
+                ItemStack worldItem = createWorldManagementItem(worldConfig);
+                inventory.setStack(slot, worldItem);
+                worldsPlaced++;
             }
         }
-        
+
         // Bottom action bar (row 5, slots 45-53)
         // Reload Config button
         ItemStack reloadItem = new ItemStack(Items.WRITABLE_BOOK);
@@ -145,12 +155,11 @@ public class AdminDashboardGui extends ScreenHandler {
             inventory.setStack(50, nextItem);
         }
         
-        // Close/Back button
-        ItemStack closeItem = new ItemStack(Items.BARRIER);
-        setItemNameAndLore(closeItem, "§c§lClose Dashboard", 
-            "§7Return to world selector");
-        inventory.setStack(53, closeItem);
-    }
+        // Back button (arrow)
+        ItemStack backItem = new ItemStack(Items.ARROW);
+        setItemNameAndLore(backItem, "§e§lBack", "§7Return to dashboard");
+        inventory.setStack(53, backItem);
+        }
 
     private ItemStack createWorldManagementItem(ModConfig.ResourceWorldConfig worldConfig) {
         ItemStack item;
@@ -225,7 +234,14 @@ public class AdminDashboardGui extends ScreenHandler {
 
     @Override
     public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity player) {
-        if (slotIndex < 0 || slotIndex >= inventory.size()) {
+        // Prevent default behavior for GUI slots
+        if (slotIndex < 0 || slotIndex >= 54) {
+            super.onSlotClick(slotIndex, button, actionType, player);
+            return;
+        }
+        
+        // Ignore pickup actions, only respond to direct clicks
+        if (actionType != SlotActionType.PICKUP) {
             return;
         }
         
@@ -261,9 +277,13 @@ public class AdminDashboardGui extends ScreenHandler {
                     populateInventory();
                 }
                 break;
-            case 53: // Close
+            case 53: // Back arrow
                 serverPlayer.closeHandledScreen();
-                // Optionally reopen world selector
+                // Open the real Resource Worlds GUI (WorldSelectionGui)
+                serverPlayer.openHandledScreen(new net.minecraft.screen.SimpleNamedScreenHandlerFactory(
+                    (syncId, inv, p) -> new com.timedharvest.gui.WorldSelectionGui(syncId, inv, new net.minecraft.inventory.SimpleInventory(27), serverPlayer),
+                    net.minecraft.text.Text.literal("§6Resource Worlds")
+                ));
                 break;
             default:
                 // Check if it's a world management item
@@ -273,68 +293,197 @@ public class AdminDashboardGui extends ScreenHandler {
     }
 
     private void handleWorldClick(ServerPlayerEntity player, int slotIndex, int button) {
-        // World items are in slots 10-44 area, spaced out
+        // World items are in slots 10-44 area, spaced out (only odd columns 1,3,5,7)
         List<ModConfig.ResourceWorldConfig> worlds = TimedHarvestMod.getConfig().resourceWorlds;
         int startIndex = currentPage * WORLDS_PER_PAGE;
-        
-        // Calculate which world this slot represents
-        int worldIndex = getWorldIndexFromSlot(slotIndex, startIndex);
-        if (worldIndex >= 0 && worldIndex < worlds.size()) {
-            ModConfig.ResourceWorldConfig worldConfig = worlds.get(worldIndex);
-            
-            if (button == 0) { // Left click - show management options
-                player.closeHandledScreen();
-                showWorldManagementOptions(player, worldConfig);
-            } else if (button == 1) { // Right click - toggle enabled/disabled
-                worldConfig.enabled = !worldConfig.enabled;
-                TimedHarvestMod.getConfig().save();
-                populateInventory();
-                
-                String status = worldConfig.enabled ? "§a§lENABLED" : "§c§lDISABLED";
-                player.sendMessage(Text.literal("§6World '§e§l" + worldConfig.worldId + "§6' is now " + status));
+
+        // Only handle clicks in valid world item slots
+        if (slotIndex < 10 || slotIndex > 44) return;
+        int row = (slotIndex - 10) / 9;
+        int col = (slotIndex - 10) % 9;
+        // Only odd columns (1,3,5,7) are used for world items
+        if (col < 1 || col > 7 || col % 2 == 0) return;
+        int indexInRow = (col - 1) / 2;
+        int worldIndex = startIndex + (row * 4) + indexInRow;
+        if (worldIndex < 0 || worldIndex >= worlds.size()) return;
+        ModConfig.ResourceWorldConfig worldConfig = worlds.get(worldIndex);
+
+        if (button == 0) { // Left click - show management options
+            player.closeHandledScreen();
+            showWorldManagementOptions(player, worldConfig);
+        } else if (button == 1) { // Right click - toggle enabled/disabled
+            worldConfig.enabled = !worldConfig.enabled;
+            TimedHarvestMod.getConfig().save();
+            populateInventory();
+            String status = worldConfig.enabled ? "§a§lENABLED" : "§c§lDISABLED";
+            player.sendMessage(Text.literal("§6World '§e§l" + worldConfig.worldId + "§6' is now " + status));
+        }
+    }
+
+
+    private void showWorldManagementOptions(ServerPlayerEntity player, ModConfig.ResourceWorldConfig worldConfig) {
+        // Open a new GUI with command buttons for this world
+        player.openHandledScreen(new WorldCommandGuiFactory(worldConfig));
+    }
+
+    // Inner class for the world command submenu GUI
+    private static class WorldCommandGui extends ScreenHandler {
+        /**
+         * Returns the name of the player who opened this GUI.
+         */
+        public String getPlayerName() {
+            return player.getName().getString();
+        }
+        @Override
+        public boolean canUse(PlayerEntity player) {
+            return true;
+        }
+
+        @Override
+        public ItemStack quickMove(PlayerEntity player, int index) {
+            return ItemStack.EMPTY;
+        }
+        private final ModConfig.ResourceWorldConfig worldConfig;
+        private final Inventory inventory;
+        private final ServerPlayerEntity player;
+
+        public WorldCommandGui(int syncId, PlayerInventory playerInventory, ModConfig.ResourceWorldConfig worldConfig, ServerPlayerEntity player) {
+            super(ScreenHandlerType.GENERIC_9X3, syncId);
+            this.worldConfig = worldConfig;
+            this.player = player;
+            this.inventory = new SimpleInventory(27);
+
+            // Add slots
+            for (int row = 0; row < 3; row++) {
+                for (int col = 0; col < 9; col++) {
+                    this.addSlot(new Slot(inventory, col + row * 9, 8 + col * 18, 18 + row * 18) {
+                        @Override
+                        public boolean canInsert(ItemStack stack) { return false; }
+                    });
+                }
+            }
+
+            // Use the player field: send a message when the GUI is opened
+            player.sendMessage(Text.literal("§7World Command Menu opened for: §e" + worldConfig.worldId));
+
+            // Populate command buttons
+            populateButtons();
+        }
+
+        private void populateButtons() {
+            // Reset
+            ItemStack reset = new ItemStack(Items.REDSTONE_BLOCK);
+            setItemNameAndLore(reset, "§e/timedharvest reset", "§7Manually reset this world");
+            inventory.setStack(10, reset);
+
+            // TP
+            ItemStack tp = new ItemStack(Items.ENDER_PEARL);
+            setItemNameAndLore(tp, "§e/timedharvest tp", "§7Teleport to this world");
+            inventory.setStack(12, tp);
+
+            // Status
+            ItemStack status = new ItemStack(Items.PAPER);
+            setItemNameAndLore(status, "§e/timedharvest status", "§7View detailed status", "§8Opened by: §b" + getPlayerName());
+            inventory.setStack(14, status);
+
+            // Enable/Disable
+            ItemStack toggle = new ItemStack(worldConfig.enabled ? Items.RED_DYE : Items.LIME_DYE);
+            setItemNameAndLore(toggle, worldConfig.enabled ? "§c/timedharvest disable" : "§a/timedharvest enable", worldConfig.enabled ? "§7Disable this world" : "§7Enable this world");
+            inventory.setStack(16, toggle);
+
+            // Delete
+            ItemStack delete = new ItemStack(Items.BARRIER);
+            setItemNameAndLore(delete, "§c/timedharvest delete", "§cRemove from configuration");
+            inventory.setStack(22, delete);
+
+            // Back button
+            ItemStack back = new ItemStack(Items.ARROW);
+            setItemNameAndLore(back, "§eBack", "§7Return to dashboard");
+            inventory.setStack(26, back);
+        }
+
+        private void setItemNameAndLore(ItemStack item, String name, String lore) {
+            setItemNameAndLore(item, name, new String[]{lore});
+        }
+
+        // Overload to support multiple lore lines
+        private void setItemNameAndLore(ItemStack item, String name, String... loreLines) {
+            NbtCompound nbt = item.getOrCreateNbt();
+            NbtCompound display = new NbtCompound();
+            display.putString("Name", Text.Serializer.toJson(Text.literal(name)));
+            NbtList loreList = new NbtList();
+            for (String line : loreLines) {
+                loreList.add(NbtString.of(Text.Serializer.toJson(Text.literal(line))));
+            }
+            display.put("Lore", loreList);
+            nbt.put("display", display);
+        }
+
+        @Override
+        public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity player) {
+            if (slotIndex < 0 || slotIndex >= 27 || actionType != SlotActionType.PICKUP) {
+                super.onSlotClick(slotIndex, button, actionType, player);
+                return;
+            }
+            ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
+            switch (slotIndex) {
+                case 10: // Reset
+                    serverPlayer.closeHandledScreen();
+                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest reset " + worldConfig.worldId);
+                    break;
+                case 12: // TP
+                    serverPlayer.closeHandledScreen();
+                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest tp " + worldConfig.worldId);
+                    break;
+                case 14: // Status
+                    serverPlayer.closeHandledScreen();
+                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest status " + worldConfig.worldId);
+                    break;
+                case 16: // Enable/Disable
+                    serverPlayer.closeHandledScreen();
+                    String cmd = worldConfig.enabled ? "timedharvest disable " : "timedharvest enable ";
+                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd + worldConfig.worldId);
+                    break;
+                case 22: // Delete
+                    serverPlayer.closeHandledScreen();
+                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest delete " + worldConfig.worldId);
+                    break;
+                case 26: // Back
+                    serverPlayer.closeHandledScreen();
+                    serverPlayer.openHandledScreen(new AdminDashboardGuiFactory());
+                    break;
+                default:
+                    break;
             }
         }
     }
 
-    private int getWorldIndexFromSlot(int slot, int startIndex) {
-        // Worlds start at slot 10 and are spaced 2 slots apart
-        // Pattern: 10, 12, 14, 16 (row 2)
-        //          19, 21, 23, 25 (row 3)
-        //          etc.
-        
-        if (slot < 10 || slot > 44) return -1;
-        
-        int row = (slot - 10) / 9;
-        int col = (slot - 10) % 9;
-        
-        // Only even columns starting from 1
-        if (col < 1 || col > 7 || col % 2 == 0) return -1;
-        
-        int indexInRow = (col - 1) / 2;
-        int worldIndex = startIndex + (row * 4) + indexInRow;
-        
-        return worldIndex;
+    // Factory for opening the world command submenu
+    private static class WorldCommandGuiFactory implements net.minecraft.screen.NamedScreenHandlerFactory {
+        private final ModConfig.ResourceWorldConfig worldConfig;
+        public WorldCommandGuiFactory(ModConfig.ResourceWorldConfig worldConfig) {
+            this.worldConfig = worldConfig;
+        }
+        @Override
+        public Text getDisplayName() {
+            return Text.literal("§6World: " + worldConfig.worldId);
+        }
+        @Override
+        public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
+            return new WorldCommandGui(syncId, inv, worldConfig, (ServerPlayerEntity) player);
+        }
     }
 
-    private void showWorldManagementOptions(ServerPlayerEntity player, ModConfig.ResourceWorldConfig worldConfig) {
-        player.sendMessage(Text.literal("§6§l▬▬▬▬▬ §e§lWorld: " + worldConfig.worldId + " §6§l▬▬▬▬▬"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("§e§lAvailable Commands:"));
-        player.sendMessage(Text.literal("  §a● §6/timedharvest reset §e" + worldConfig.worldId));
-        player.sendMessage(Text.literal("    §7→ Manually reset this world"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("  §a● §6/timedharvest tp §e" + worldConfig.worldId));
-        player.sendMessage(Text.literal("    §7→ Teleport to this world"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("  §a● §6/timedharvest status §e" + worldConfig.worldId));
-        player.sendMessage(Text.literal("    §7→ View detailed status"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("  §a● §6/timedharvest " + (worldConfig.enabled ? "disable" : "enable") + " §e" + worldConfig.worldId));
-        player.sendMessage(Text.literal("    §7→ " + (worldConfig.enabled ? "Disable" : "Enable") + " this world"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("  §c● §6/timedharvest delete §e" + worldConfig.worldId));
-        player.sendMessage(Text.literal("    §7→ §cRemove from configuration"));
-        player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"));
+    // Factory for returning to the dashboard
+    public static class AdminDashboardGuiFactory implements net.minecraft.screen.NamedScreenHandlerFactory {
+        @Override
+        public Text getDisplayName() {
+            return Text.literal("§6Admin Dashboard");
+        }
+        @Override
+        public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
+            return new AdminDashboardGui(syncId, inv, new SimpleInventory(54), (ServerPlayerEntity) player);
+        }
     }
 
     private void handleReloadConfig(ServerPlayerEntity player) {
@@ -348,17 +497,23 @@ public class AdminDashboardGui extends ScreenHandler {
         player.sendMessage(Text.literal("§6§l▬▬▬▬ §e§lCreate World Command §6§l▬▬▬▬"));
         player.sendMessage(Text.literal(""));
         player.sendMessage(Text.literal("§e§lUsage:"));
-        player.sendMessage(Text.literal("  §6/timedharvest create §7<worldId> <dimension> <hours>"));
+        player.sendMessage(Text.literal("  §6/timedharvest create §7<worldId> <dimension> <days>"));
         player.sendMessage(Text.literal("                       §7[type] [seed] [border] [structures]"));
         player.sendMessage(Text.literal(""));
+        player.sendMessage(Text.literal("§e§lAllowed Days:"));
+            player.sendMessage(Text.literal("  §a● §f1, 2, 3, 4, 5, 6, 7 §7(daily to weekly)"));
+            player.sendMessage(Text.literal("  §a● §f14 §7(bi-weekly)"));
+            player.sendMessage(Text.literal("  §a● §f21 §7(tri-weekly)"));
+            player.sendMessage(Text.literal("  §a● §f28 §7(monthly)"));
+        player.sendMessage(Text.literal(""));
         player.sendMessage(Text.literal("§e§lExamples:"));
-        player.sendMessage(Text.literal("  §7Nether: §f/th create §enether §atimed_harvest:nether §624"));
-        player.sendMessage(Text.literal("           §f          §e...... §aminecraft:the_nether §624"));
+        player.sendMessage(Text.literal("  §7Weekly: §f/th create §enether §atimed_harvest:nether §67"));
+        player.sendMessage(Text.literal("           §f          §e...... §aminecraft:the_nether §67"));
         player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("  §7End: §f/th create §eend §atimed_harvest:end §648"));
-        player.sendMessage(Text.literal("        §f          §e... §aminecraft:the_end §648"));
+        player.sendMessage(Text.literal("  §7Bi-weekly: §f/th create §eend §atimed_harvest:end §614"));
+        player.sendMessage(Text.literal("              §f          §e... §aminecraft:the_end §614"));
         player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("  §7Mining: §f/th create §emining §atimed_harvest:mining §612"));
+        player.sendMessage(Text.literal("  §7Daily: §f/th create §emining §atimed_harvest:mining §61"));
         player.sendMessage(Text.literal(""));
         player.sendMessage(Text.literal("§8Tip: See §7/timedharvest help §8for more info"));
         player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"));
@@ -385,18 +540,5 @@ public class AdminDashboardGui extends ScreenHandler {
         player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"));
     }
 
-    @Override
-    public ItemStack quickMove(PlayerEntity player, int slot) {
-        return ItemStack.EMPTY; // Disable shift-clicking
-    }
-
-    @Override
-    public boolean canUse(PlayerEntity player) {
-        return player.hasPermissionLevel(2); // Admin only
-    }
-
-    @Override
-    public void onClosed(PlayerEntity player) {
-        super.onClosed(player);
-    }
 }
+

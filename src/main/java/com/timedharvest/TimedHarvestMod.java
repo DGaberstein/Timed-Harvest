@@ -7,6 +7,7 @@ import com.timedharvest.world.ResourceWorldManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,6 +25,10 @@ public class TimedHarvestMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        // Register world load event to apply pending world borders
+        ServerWorldEvents.LOAD.register((server, world) -> {
+            worldManager.onWorldLoad(world);
+        });
         LOGGER.info("Initializing Timed Harvest Mod");
 
         // Load configuration

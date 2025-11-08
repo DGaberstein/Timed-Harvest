@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.timedharvest.TimedHarvestMod;
 import com.timedharvest.config.ModConfig;
 import com.timedharvest.gui.WorldSelectionGui;
+import com.timedharvest.world.ResourceWorldManager;
 import com.timedharvest.scheduler.ResetScheduler;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.inventory.SimpleInventory;
@@ -22,10 +23,18 @@ import net.minecraft.world.World;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.command.argument.IdentifierArgumentType;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 /**
  * Registers and handles all commands for the Timed Harvest mod.
  */
 public class TimedHarvestCommands {
+    
+    // Teleport cooldown tracking
+    private static final Map<UUID, Long> TELEPORT_COOLDOWNS = new HashMap<>();
+    private static final long COOLDOWN_MS = 3000; // 3 seconds cooldown
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -35,9 +44,9 @@ public class TimedHarvestCommands {
     }
 
     private static void registerCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
+        final int[] RESET_DAYS = new int[] {1, 2, 3, 4, 5, 6, 7, 14, 21, 28};
         dispatcher.register(CommandManager.literal("timedharvest")
             .requires(source -> source.hasPermissionLevel(2)) // Requires OP level 2
-            
             // /timedharvest reset <worldId>
             .then(CommandManager.literal("reset")
                 .then(CommandManager.argument("worldId", StringArgumentType.string())
@@ -51,7 +60,6 @@ public class TimedHarvestCommands {
                         return builder.buildFuture();
                     })
                     .executes(TimedHarvestCommands::resetWorld)))
-            
             // /timedharvest status [worldId]
             .then(CommandManager.literal("status")
                 .executes(TimedHarvestCommands::statusAll)
@@ -64,11 +72,9 @@ public class TimedHarvestCommands {
                         return builder.buildFuture();
                     })
                     .executes(TimedHarvestCommands::statusSingle)))
-            
             // /timedharvest reload
             .then(CommandManager.literal("reload")
                 .executes(TimedHarvestCommands::reloadConfig))
-            
             // /timedharvest tp <worldId> - Teleport to resource world
             .then(CommandManager.literal("tp")
                 .then(CommandManager.argument("worldId", StringArgumentType.word())
@@ -83,19 +89,21 @@ public class TimedHarvestCommands {
                         return builder.buildFuture();
                     })
                     .executes(TimedHarvestCommands::teleportToWorld)))
-            
             // /timedharvest spawn - Teleport to overworld spawn
             .then(CommandManager.literal("spawn")
                 .executes(TimedHarvestCommands::teleportToSpawn))
-            
-            // /timedharvest create <worldId> <dimensionName> <resetHours> [worldType] [seed] [borderSize] [structures]
+            // /timedharvest create <worldId> <dimensionName> <resetDays> [worldType] [seed] [borderSize] [structures]
             .then(CommandManager.literal("create")
                 .then(CommandManager.argument("worldId", StringArgumentType.word())
                     .then(CommandManager.argument("dimensionName", IdentifierArgumentType.identifier())
-                        .then(CommandManager.argument("resetHours", StringArgumentType.word())
-                            // Basic: /timedharvest create <worldId> <dimensionName> <resetHours>
+                        .then(CommandManager.argument("resetDays", StringArgumentType.word())
+                            .suggests((context, builder) -> {
+                                for (int d : RESET_DAYS) builder.suggest(Integer.toString(d));
+                                return builder.buildFuture();
+                            })
+                            // Basic: /timedharvest create <worldId> <dimensionName> <resetDays>
                             .executes(TimedHarvestCommands::createWorld)
-                            // With worldType: /timedharvest create <worldId> <dimensionName> <resetHours> <worldType>
+                            // With worldType: /timedharvest create <worldId> <dimensionName> <resetDays> <worldType>
                             .then(CommandManager.argument("worldType", IdentifierArgumentType.identifier())
                                 .suggests((context, builder) -> {
                                     builder.suggest("minecraft:overworld");
@@ -275,11 +283,12 @@ public class TimedHarvestCommands {
             context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest tp §7<worldId> §8- §fTeleport to world"), false);
             context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest spawn §8- §fTeleport to overworld"), false);
             context.getSource().sendFeedback(() -> Text.literal(""), false);
-            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest create §7<worldId> <dimension> <hours>"), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest create §7<worldId> <dimension> <days>"), false);
             context.getSource().sendFeedback(() -> Text.literal("                       §7[type] [seed] [border] [structures]"), false);
             context.getSource().sendFeedback(() -> Text.literal("    §8→ §fCreate new resource world"), false);
-            context.getSource().sendFeedback(() -> Text.literal("    §7Example: §f/th create §enether §atimed_harvest:nether §624"), false);
-            context.getSource().sendFeedback(() -> Text.literal("              §f          §e....... §aminecraft:the_nether §624"), false);
+        context.getSource().sendFeedback(() -> Text.literal("    §7Days: §f1, 2, 3, 4, 5, 6, 7, 14, 21, 28"), false);
+            context.getSource().sendFeedback(() -> Text.literal("    §7Example: §f/th create §enether §atimed_harvest:nether §67"), false);
+            context.getSource().sendFeedback(() -> Text.literal("              §f          §e....... §aminecraft:the_nether §67"), false);
             context.getSource().sendFeedback(() -> Text.literal(""), false);
             context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest enable §7<worldId> §8- §fEnable a world"), false);
             context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest disable §7<worldId> §8- §fDisable a world"), false);
@@ -353,6 +362,14 @@ public class TimedHarvestCommands {
             return 0;
         }
 
+        // Check teleport cooldown
+        if (!checkTeleportCooldown(player)) {
+            long remainingMs = getRemainingCooldown(player);
+            double remainingSec = remainingMs / 1000.0;
+            player.sendMessage(Text.literal(String.format("§c§l⏱ §cPlease wait %.1f seconds before teleporting again!", remainingSec)), true);
+            return 0;
+        }
+
         // Get the dimension
         RegistryKey<World> dimensionKey = RegistryKey.of(RegistryKeys.WORLD, 
             new Identifier(worldConfig.dimensionName));
@@ -375,7 +392,12 @@ public class TimedHarvestCommands {
         BlockPos spawnPos = targetWorld.getSpawnPos();
         player.teleport(targetWorld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
         
-        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aTeleported to §e§l" + worldId + "§a!"), false);
+        // Set cooldown after successful teleport
+        setTeleportCooldown(player);
+        
+        long seed = targetWorld.getSeed();
+        String displayName = ResourceWorldManager.getDisplayNameForWorld(targetWorld);
+        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aTeleported to §e" + displayName + "§a!\n§7Seed: §a[§e" + seed + "§a]"), false);
         return 1;
     }
 
@@ -389,10 +411,21 @@ public class TimedHarvestCommands {
             return 0;
         }
 
+        // Check teleport cooldown
+        if (!checkTeleportCooldown(player)) {
+            long remainingMs = getRemainingCooldown(player);
+            double remainingSec = remainingMs / 1000.0;
+            player.sendMessage(Text.literal(String.format("§c§l⏱ §cPlease wait %.1f seconds before teleporting again!", remainingSec)), true);
+            return 0;
+        }
+
         ServerWorld overworld = context.getSource().getServer().getOverworld();
         BlockPos spawnPos = overworld.getSpawnPos();
         
         player.teleport(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
+        
+        // Set cooldown after successful teleport
+        setTeleportCooldown(player);
         
         context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aTeleported to §e§lspawn§a!"), false);
         return 1;
@@ -511,7 +544,7 @@ public class TimedHarvestCommands {
         String worldId = StringArgumentType.getString(context, "worldId");
         Identifier dimensionNameId = IdentifierArgumentType.getIdentifier(context, "dimensionName");
         String dimensionName = dimensionNameId.toString();
-        String hoursStr = StringArgumentType.getString(context, "resetHours");
+        String daysStr = StringArgumentType.getString(context, "resetDays");
 
         // Check if world already exists
         if (findWorldConfig(worldId) != null) {
@@ -538,18 +571,30 @@ public class TimedHarvestCommands {
             return 0;
         }
 
-        // Parse reset hours
-        double resetHours;
+        // Parse reset days and validate
+        int resetDays;
         try {
-            resetHours = Double.parseDouble(hoursStr);
-            if (resetHours <= 0) {
-                context.getSource().sendError(Text.literal("§cReset hours must be positive!"));
+            resetDays = Integer.parseInt(daysStr);
+            // Only allow specific day values
+            if (resetDays != 1 && resetDays != 2 && resetDays != 3 && resetDays != 4 && 
+                resetDays != 5 && resetDays != 6 && resetDays != 7 && resetDays != 14 && 
+                resetDays != 21 && resetDays != 28) {
+                context.getSource().sendError(Text.literal("§c§l✖ §cInvalid reset interval!"));
+                context.getSource().sendError(Text.literal(""));
+                context.getSource().sendError(Text.literal("§e§lAllowed values (in days):"));
+                context.getSource().sendError(Text.literal("  §a● §f1, 2, 3, 4, 5, 6, 7 §7(daily to weekly)"));
+                context.getSource().sendError(Text.literal("  §a● §f14 §7(bi-weekly)"));
+                context.getSource().sendError(Text.literal("  §a● §f21 §7(tri-weekly)"));
+                context.getSource().sendError(Text.literal("  §a● §f28 §7(monthly)"));
                 return 0;
             }
         } catch (NumberFormatException e) {
-            context.getSource().sendError(Text.literal("§cInvalid number format for reset hours!"));
+            context.getSource().sendError(Text.literal("§cInvalid number format for reset days!"));
             return 0;
         }
+
+        // Convert days to hours
+        double resetHours = resetDays * 24.0;
 
         // Create new world config
         ModConfig.ResourceWorldConfig newWorld = new ModConfig.ResourceWorldConfig();
@@ -603,7 +648,7 @@ public class TimedHarvestCommands {
         context.getSource().sendFeedback(() -> Text.literal("  §6● §eSeed: §a§l" + finalSeed + (seed == 0 ? " §7(randomly generated)" : "")), false);
         context.getSource().sendFeedback(() -> Text.literal("  §6● §eWorld Border: §f" + (borderSize == 0 ? "§7None (Infinite)" : borderSize + " blocks")), false);
         context.getSource().sendFeedback(() -> Text.literal("  §6● §eStructures: " + (generateStructures ? "§a§lENABLED" : "§c§lDISABLED")), false);
-        context.getSource().sendFeedback(() -> Text.literal("  §6● §eReset Interval: §f" + resetHours + " hours"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §6● §eReset Interval: §f" + resetDays + " days §7(" + (int)resetHours + " hours)"), false);
         context.getSource().sendFeedback(() -> Text.literal(""), false);
         context.getSource().sendFeedback(() -> Text.literal("§e§lNext Steps:"), false);
         context.getSource().sendFeedback(() -> Text.literal("  §a1. §f§lRestart §fthe server/game"), false);
@@ -797,5 +842,42 @@ public class TimedHarvestCommands {
 
         return 1;
     }
+    
+    /**
+     * Checks if a player can teleport (cooldown expired).
+     */
+    private static boolean checkTeleportCooldown(ServerPlayerEntity player) {
+        UUID playerId = player.getUuid();
+        long currentTime = System.currentTimeMillis();
+        
+        if (!TELEPORT_COOLDOWNS.containsKey(playerId)) {
+            return true;
+        }
+        
+        long lastTeleport = TELEPORT_COOLDOWNS.get(playerId);
+        return (currentTime - lastTeleport) >= COOLDOWN_MS;
+    }
+    
+    /**
+     * Gets the remaining cooldown time in milliseconds.
+     */
+    private static long getRemainingCooldown(ServerPlayerEntity player) {
+        UUID playerId = player.getUuid();
+        long currentTime = System.currentTimeMillis();
+        
+        if (!TELEPORT_COOLDOWNS.containsKey(playerId)) {
+            return 0;
+        }
+        
+        long lastTeleport = TELEPORT_COOLDOWNS.get(playerId);
+        long elapsed = currentTime - lastTeleport;
+        return Math.max(0, COOLDOWN_MS - elapsed);
+    }
+    
+    /**
+     * Sets the teleport cooldown for a player.
+     */
+    private static void setTeleportCooldown(ServerPlayerEntity player) {
+        TELEPORT_COOLDOWNS.put(player.getUuid(), System.currentTimeMillis());
+    }
 }
-

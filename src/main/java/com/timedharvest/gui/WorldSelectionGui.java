@@ -26,7 +26,10 @@ import net.minecraft.world.World;
 import net.minecraft.util.math.BlockPos;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * GUI for selecting and teleporting to resource worlds.
@@ -37,6 +40,10 @@ public class WorldSelectionGui extends ScreenHandler {
     private final ServerPlayerEntity player;
     private int currentPage = 0;
     private static final int WORLDS_PER_PAGE = 9; // One row of worlds
+    
+    // Teleport cooldown tracking
+    private static final Map<UUID, Long> TELEPORT_COOLDOWNS = new HashMap<>();
+    private static final long COOLDOWN_MS = 3000; // 3 seconds cooldown
 
     public WorldSelectionGui(int syncId, PlayerInventory playerInventory) {
         this(syncId, playerInventory, new SimpleInventory(27), (ServerPlayerEntity) playerInventory.player);
@@ -341,6 +348,15 @@ public class WorldSelectionGui extends ScreenHandler {
     }
 
     private void teleportToWorld(ServerPlayerEntity player, ModConfig.ResourceWorldConfig worldConfig) {
+        // Check teleport cooldown
+        if (!checkTeleportCooldown(player)) {
+            long remainingMs = getRemainingCooldown(player);
+            double remainingSec = remainingMs / 1000.0;
+            player.sendMessage(Text.literal(String.format("§c§l⏱ §cPlease wait %.1f seconds before teleporting again!", remainingSec)), true);
+            player.closeHandledScreen();
+            return;
+        }
+        
         RegistryKey<World> dimensionKey = RegistryKey.of(RegistryKeys.WORLD, 
             new Identifier(worldConfig.dimensionName));
         
@@ -376,16 +392,70 @@ public class WorldSelectionGui extends ScreenHandler {
         // Teleport to spawn point
         BlockPos spawnPos = targetWorld.getSpawnPos();
         player.teleport(targetWorld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
-        player.sendMessage(Text.literal("§a§l✓ §aTeleported to §e§l" + worldConfig.worldId + "§a!"));
+        
+        // Set cooldown after successful teleport
+        setTeleportCooldown(player);
+        
+            // The server will send the correct feedback with world name and seed, so no need to send a local message here.
     }
 
     private void teleportToSpawn(ServerPlayerEntity player) {
+        // Check teleport cooldown
+        if (!checkTeleportCooldown(player)) {
+            long remainingMs = getRemainingCooldown(player);
+            double remainingSec = remainingMs / 1000.0;
+            player.sendMessage(Text.literal(String.format("§c§l⏱ §cPlease wait %.1f seconds before teleporting again!", remainingSec)), true);
+            player.closeHandledScreen();
+            return;
+        }
+        
         ServerWorld overworld = player.getServer().getOverworld();
         BlockPos spawnPos = overworld.getSpawnPos();
         
         player.teleport(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
+        
+        // Set cooldown after successful teleport
+        setTeleportCooldown(player);
 
         player.sendMessage(Text.literal("§a§l✓ §aTeleported to §e§lspawn§a!"));
+    }
+    
+    /**
+     * Checks if a player can teleport (cooldown expired).
+     */
+    private boolean checkTeleportCooldown(ServerPlayerEntity player) {
+        UUID playerId = player.getUuid();
+        long currentTime = System.currentTimeMillis();
+        
+        if (!TELEPORT_COOLDOWNS.containsKey(playerId)) {
+            return true;
+        }
+        
+        long lastTeleport = TELEPORT_COOLDOWNS.get(playerId);
+        return (currentTime - lastTeleport) >= COOLDOWN_MS;
+    }
+    
+    /**
+     * Gets the remaining cooldown time in milliseconds.
+     */
+    private long getRemainingCooldown(ServerPlayerEntity player) {
+        UUID playerId = player.getUuid();
+        long currentTime = System.currentTimeMillis();
+        
+        if (!TELEPORT_COOLDOWNS.containsKey(playerId)) {
+            return 0;
+        }
+        
+        long lastTeleport = TELEPORT_COOLDOWNS.get(playerId);
+        long elapsed = currentTime - lastTeleport;
+        return Math.max(0, COOLDOWN_MS - elapsed);
+    }
+    
+    /**
+     * Sets the teleport cooldown for a player.
+     */
+    private void setTeleportCooldown(ServerPlayerEntity player) {
+        TELEPORT_COOLDOWNS.put(player.getUuid(), System.currentTimeMillis());
     }
 
     @Override
