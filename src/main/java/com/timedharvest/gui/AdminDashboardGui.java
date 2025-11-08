@@ -25,6 +25,90 @@ import java.util.List;
  * Admin Dashboard GUI for managing resource worlds.
  */
 public class AdminDashboardGui extends ScreenHandler {
+    // --- Static inner classes for GUI factories and confirmation dialogs ---
+    public static class AdminDashboardGuiFactory implements net.minecraft.screen.NamedScreenHandlerFactory {
+        @Override
+        public net.minecraft.text.Text getDisplayName() {
+            return net.minecraft.text.Text.literal("Admin Dashboard");
+        }
+        @Override
+        public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
+            return new AdminDashboardGui(syncId, inv);
+        }
+    }
+
+    public static class WorldCommandGuiFactory implements net.minecraft.screen.NamedScreenHandlerFactory {
+        private final ModConfig.ResourceWorldConfig worldConfig;
+        public WorldCommandGuiFactory(ModConfig.ResourceWorldConfig worldConfig) {
+            this.worldConfig = worldConfig;
+        }
+        @Override
+        public net.minecraft.text.Text getDisplayName() {
+            return net.minecraft.text.Text.literal("World Command");
+        }
+        @Override
+        public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
+            return new WorldCommandGui(syncId, inv, worldConfig, (ServerPlayerEntity) player);
+        }
+    }
+
+    public static class ConfirmationGuiFactory implements net.minecraft.screen.NamedScreenHandlerFactory {
+        private final boolean approved;
+        public ConfirmationGuiFactory(boolean approved) {
+            this.approved = approved;
+        }
+        @Override
+        public net.minecraft.text.Text getDisplayName() {
+            return net.minecraft.text.Text.literal(approved ? "Approve Action" : "Cancel Action");
+        }
+        @Override
+        public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
+            return new ConfirmationGui(syncId, inv, (ServerPlayerEntity) player, approved);
+        }
+    }
+
+    public static class ConfirmationGui extends ScreenHandler {
+        private final Inventory inventory;
+    // Removed unused fields: player, approved
+        public ConfirmationGui(int syncId, PlayerInventory playerInventory, ServerPlayerEntity player, boolean approved) {
+            super(ScreenHandlerType.GENERIC_9X1, syncId);
+            this.inventory = new SimpleInventory(9);
+            // Add slots
+            for (int col = 0; col < 9; col++) {
+                this.addSlot(new Slot(inventory, col, 8 + col * 18, 18));
+            }
+            // Populate confirmation button
+            ItemStack confirm = new ItemStack(approved ? Items.LIME_CONCRETE : Items.RED_CONCRETE);
+            setItemNameAndLore(confirm, approved ? "§aCONFIRM APPROVED" : "§cCONFIRM CANCEL", approved ? "§7Confirm the APPROVED action" : "§7Confirm the CANCEL action");
+            inventory.setStack(4, confirm);
+        }
+        @Override
+        public boolean canUse(PlayerEntity player) { return true; }
+        @Override
+        public ItemStack quickMove(PlayerEntity player, int index) { return ItemStack.EMPTY; }
+        @Override
+        public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity player) {
+            if (slotIndex == 4 && actionType == SlotActionType.PICKUP) {
+                ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
+                serverPlayer.closeHandledScreen();
+                serverPlayer.openHandledScreen(new AdminDashboardGui.AdminDashboardGuiFactory());
+            }
+        }
+        private void setItemNameAndLore(ItemStack item, String name, String lore) {
+            setItemNameAndLore(item, name, new String[]{lore});
+        }
+        private void setItemNameAndLore(ItemStack item, String name, String... loreLines) {
+            NbtCompound nbt = item.getOrCreateNbt();
+            NbtCompound display = new NbtCompound();
+            display.putString("Name", Text.Serializer.toJson(Text.literal(name)));
+            NbtList loreList = new NbtList();
+            for (String line : loreLines) {
+                loreList.add(NbtString.of(Text.Serializer.toJson(Text.literal(line))));
+            }
+            display.put("Lore", loreList);
+            nbt.put("display", display);
+        }
+    }
 
     @Override
     public boolean canUse(PlayerEntity player) {
@@ -328,7 +412,7 @@ public class AdminDashboardGui extends ScreenHandler {
 
     private void showWorldManagementOptions(ServerPlayerEntity player, ModConfig.ResourceWorldConfig worldConfig) {
         // Open a new GUI with command buttons for this world
-        player.openHandledScreen(new WorldCommandGuiFactory(worldConfig));
+    player.openHandledScreen(new AdminDashboardGui.WorldCommandGuiFactory(worldConfig));
     }
 
     // Inner class for the world command submenu GUI
@@ -470,11 +554,21 @@ public class AdminDashboardGui extends ScreenHandler {
 
         @Override
         public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity player) {
+            ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
+            if (slotIndex == 15 && actionType == SlotActionType.PICKUP && player.hasPermissionLevel(2)) { // APPROVED
+                serverPlayer.closeHandledScreen();
+                serverPlayer.openHandledScreen(new AdminDashboardGui.ConfirmationGuiFactory(true));
+                return;
+            }
+            if (slotIndex == 17 && actionType == SlotActionType.PICKUP && player.hasPermissionLevel(2)) { // CANCEL
+                serverPlayer.closeHandledScreen();
+                serverPlayer.openHandledScreen(new AdminDashboardGui.ConfirmationGuiFactory(false));
+                return;
+            }
             if (slotIndex < 0 || slotIndex >= 27 || actionType != SlotActionType.PICKUP) {
                 super.onSlotClick(slotIndex, button, actionType, player);
                 return;
             }
-            ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
             switch (slotIndex) {
                 case 24: // Restart World (New Seed)
                     serverPlayer.closeHandledScreen();
@@ -528,42 +622,11 @@ public class AdminDashboardGui extends ScreenHandler {
                     break;
                 case 26: // Back
                     serverPlayer.closeHandledScreen();
-                    serverPlayer.openHandledScreen(new AdminDashboardGuiFactory());
+                    serverPlayer.openHandledScreen(new AdminDashboardGui.AdminDashboardGuiFactory());
                     break;
                 default:
                     break;
             }
         }
     }
-
-    // Factory for opening the world command submenu
-    private static class WorldCommandGuiFactory implements net.minecraft.screen.NamedScreenHandlerFactory {
-        private final ModConfig.ResourceWorldConfig worldConfig;
-        public WorldCommandGuiFactory(ModConfig.ResourceWorldConfig worldConfig) {
-            this.worldConfig = worldConfig;
-        }
-        @Override
-        public Text getDisplayName() {
-            return Text.literal("§6World: " + worldConfig.worldId);
-        }
-        @Override
-        public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
-            return new WorldCommandGui(syncId, inv, worldConfig, (ServerPlayerEntity) player);
-        }
-    }
-
-    // Factory for returning to the dashboard
-    public static class AdminDashboardGuiFactory implements net.minecraft.screen.NamedScreenHandlerFactory {
-        @Override
-        public Text getDisplayName() {
-            return Text.literal("§6Admin Dashboard");
-        }
-        @Override
-        public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
-            return new AdminDashboardGui(syncId, inv, new SimpleInventory(54), (ServerPlayerEntity) player);
-        }
-    }
-
-    // End of AdminDashboardGui class
 }
-
