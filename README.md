@@ -6,7 +6,9 @@ A Minecraft Fabric mod that creates automatically resetting resource worlds with
 
 - ✅ **Automatic World Resets** - Schedule resource worlds to reset at configurable intervals
 - ✅ **Player-Friendly GUI** - Simple `/th` command opens a professional world selector with title bar
-- ✅ **Admin Dashboard GUI** - Visual management interface for operators (`/th admin`)
+- ✅ **Admin Dashboard GUI** - Visual management interface for operators (`/th admin`), now with confirmation dialogs for all critical actions (delete, reset, teleport, enable/disable, set main, status)
+- ✅ **Confirmation Dialogs** - All admin actions now require confirmation via a dedicated GUI, preventing accidental changes
+- ✅ **Consistent Navigation** - Back buttons and navigation always return you to the correct previous screen (e.g., Resource Worlds GUI)
 - ✅ **Custom Seeds** - Set specific seeds or auto-generate truly random worlds
 - ✅ **World Borders** - Configure world size limits for better performance
 - ✅ **Pagination** - Handle unlimited worlds with arrow-based navigation
@@ -33,6 +35,8 @@ A Minecraft Fabric mod that creates automatically resetting resource worlds with
 ---
 
 ## 🆕 Recent Changes
+- **Confirmation Dialogs**: All admin actions now require confirmation via a dedicated GUI, preventing accidental changes.
+- **Consistent Navigation**: Back buttons and navigation always return you to the correct previous screen (e.g., Resource Worlds GUI).
 
 - **Java 21 LTS**: Project now requires Java 21 for building and running.
 - **Modern Gradle**: Uses Gradle 8.8+ for full Java 21 support.
@@ -482,7 +486,7 @@ The `/th` command opens a professional GUI with title bar and navigation:
 
 ### Admin Dashboard GUI (`/th admin`)
 
-Operators see a powerful 6-row management interface:
+Operators see a powerful 6-row management interface. All critical actions (delete, reset, teleport, enable/disable, set main, status) now require confirmation via a dedicated GUI, making admin actions safer and more user-friendly:
 
 ```
 ┌───────────────────────────────────────────┐
