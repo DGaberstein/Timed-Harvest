@@ -3,34 +3,33 @@
 ## 🚀 Getting Started
 
 ### Prerequisites
-- **Java 17** or higher (JDK)
-- **Gradle** (wrapper included)
+- **Java 21 LTS** (JDK 21 required)
+- **Gradle 8.8+** (wrapper included)
 - **Minecraft 1.20.1** with Fabric Loader
 - **Fabric API** mod
 
 ### Setup Development Environment
 
 1. **Clone/Open the project**
-   ```bash
-   cd "c:\Users\Thicc_White\Desktop\Timed Harvest"
+2. **Install Java 21**
+   - Download from Oracle or Adoptium
+   - Set `JAVA_HOME` to your JDK 21 install path
+   - Add `JAVA_HOME\bin` to your `Path`
+3. **Generate IDE files** (optional)
+   ```powershell
+   .\gradlew idea   # For IntelliJ
+   .\gradlew eclipse # For Eclipse
    ```
-
-2. **Generate IDE files** (optional)
-   ```bash
-   # For IntelliJ IDEA
-   .\gradlew idea
-   
-   # For Eclipse
-   .\gradlew eclipse
+4. **Build the mod**
+   ```powershell
+   .\gradlew build
    ```
-
-3. **Run the client for testing**
-   ```bash
+5. **Run the client for testing**
+   ```powershell
    .\gradlew runClient
    ```
-
-4. **Run the server for testing**
-   ```bash
+6. **Run the server for testing**
+   ```powershell
    .\gradlew runServer
    ```
 
@@ -76,15 +75,26 @@
 - Brigadier command registration
 - Permission checking (OP level 2)
 - User-friendly feedback messages
+- **Enhanced GUIs**: World Selector and Admin Dashboard with modern styling, navigation, and permission-based features
 
 ## 🔧 Building the Mod
 
 ### Development Build
-```bash
+```powershell
 .\gradlew build
 ```
 
 Output: `build/libs/timed-harvest-1.0.0.jar`
+
+---
+
+## 🆕 Recent Changes
+
+- **Java 21 LTS required**
+- **Gradle 8.8+**
+- **Modern GUIs**: World Selector and Admin Dashboard restyled
+- **Create Command**: Fully customizable (type, seed, border, structures)
+- **Auto-fix & validation**: Config auto-fix and in-game troubleshooting
 
 ### Testing Build
 ```bash

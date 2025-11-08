@@ -21,11 +21,24 @@ A Minecraft Fabric mod that creates automatically resetting resource worlds with
 - ✅ **Enhanced Create Command** - Full customization with worldType, seed, border, and structures
 - ✅ **Dimension Validation** - Prevents invalid dimension names with helpful error messages
 
-## 📦 Installation
+## 📦 Installation & Requirements
 
-1. Download and install [Fabric Loader](https://fabricmc.net/use/) for Minecraft 1.20.1
-2. Download [Fabric API](https://https://modrinth.com/mod/fabric-api) and place in `mods/` folder
-3. Download **Timed Harvest** from [Modrinth](https://modrinth.com/mod/timed-harvest) and place in `mods/` folder
+1. **Java 21 LTS required!**
+  - Download and install [Java 21](https://www.oracle.com/java/technologies/downloads/) (JDK 21)
+  - Set `JAVA_HOME` to your JDK 21 install (e.g., `C:\Program Files\Java\jdk-21`)
+2. Download and install [Fabric Loader](https://fabricmc.net/use/) for Minecraft 1.20.1
+3. Download [Fabric API](https://modrinth.com/mod/fabric-api) and place in `mods/` folder
+4. Download **Timed Harvest** from [Modrinth](https://modrinth.com/mod/timed-harvest) and place in `mods/` folder
+
+---
+
+## 🆕 Recent Changes
+
+- **Java 21 LTS**: Project now requires Java 21 for building and running.
+- **Modern Gradle**: Uses Gradle 8.8+ for full Java 21 support.
+- **Enhanced GUIs**: World Selector and Admin Dashboard now have professional styling, permission-based features, and improved navigation.
+- **Create Command**: Fully customizable with world type, seed, border, and structures.
+- **Auto-Fix & Validation**: Automatic config validation and in-game troubleshooting help.
 4. Start your server/client
 5. Edit the generated config file at `config/timed-harvest.json`
 6. Restart or use `/timedharvest reload`

@@ -26,6 +26,7 @@ import net.minecraft.command.argument.IdentifierArgumentType;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.file.Path;
 
 /**
  * Registers and handles all commands for the Timed Harvest mod.
@@ -35,140 +36,257 @@ public class TimedHarvestCommands {
     // Teleport cooldown tracking
     private static final Map<UUID, Long> TELEPORT_COOLDOWNS = new HashMap<>();
     private static final long COOLDOWN_MS = 3000; // 3 seconds cooldown
+    private static final int[] RESET_DAYS = new int[] {1, 2, 3, 4, 5, 6, 7, 14, 21, 28};
+
+    // Helper for resetDays suggestions
+    private static com.mojang.brigadier.suggestion.SuggestionProvider<ServerCommandSource> resetDaysSuggester = (context, builder) -> {
+        for (int d : RESET_DAYS) builder.suggest(Integer.toString(d));
+        return builder.buildFuture();
+    };
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             registerCommands(dispatcher);
             registerPlayerCommands(dispatcher);
+
+            // Register /th restart [worldId] for convenience (alias)
+            dispatcher.register(CommandManager.literal("th")
+                .requires(source -> source.hasPermissionLevel(2))
+                .then(CommandManager.literal("restart")
+                    .requires(source -> source.hasPermissionLevel(4))
+                    .executes(ctx -> restartServerOrWorld(ctx, null))
+                    .then(CommandManager.argument("worldId", StringArgumentType.string())
+                        .suggests((context, builder) -> {
+                            ModConfig config = TimedHarvestMod.getConfig();
+                            for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
+                                builder.suggest(worldConfig.worldId);
+                            }
+                            return builder.buildFuture();
+                        })
+                        .executes(ctx -> restartServerOrWorld(ctx, StringArgumentType.getString(ctx, "worldId")))
+                    )
+                )
+            );
         });
     }
 
     private static void registerCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
-        final int[] RESET_DAYS = new int[] {1, 2, 3, 4, 5, 6, 7, 14, 21, 28};
-        dispatcher.register(CommandManager.literal("timedharvest")
-            .requires(source -> source.hasPermissionLevel(2)) // Requires OP level 2
-            // /timedharvest reset <worldId>
-            .then(CommandManager.literal("reset")
-                .then(CommandManager.argument("worldId", StringArgumentType.string())
-                    .suggests((context, builder) -> {
-                        ModConfig config = TimedHarvestMod.getConfig();
-                        for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
-                            if (worldConfig.enabled) {
-                                builder.suggest(worldConfig.worldId);
-                            }
-                        }
-                        return builder.buildFuture();
-                    })
-                    .executes(TimedHarvestCommands::resetWorld)))
-            // /timedharvest status [worldId]
-            .then(CommandManager.literal("status")
-                .executes(TimedHarvestCommands::statusAll)
-                .then(CommandManager.argument("worldId", StringArgumentType.string())
-                    .suggests((context, builder) -> {
-                        ModConfig config = TimedHarvestMod.getConfig();
-                        for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
+        // Build the root command with all subcommands chained directly
+        com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> root = CommandManager.literal("timedharvest")
+            .requires(source -> source.hasPermissionLevel(2));
+
+        root = root.then(CommandManager.literal("restart")
+            .requires(source -> source.hasPermissionLevel(4))
+            .executes(ctx -> restartServerOrWorld(ctx, null))
+            .then(CommandManager.argument("worldId", StringArgumentType.string())
+                .suggests((context, builder) -> {
+                    ModConfig config = TimedHarvestMod.getConfig();
+                    for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
+                        builder.suggest(worldConfig.worldId);
+                    }
+                    return builder.buildFuture();
+                })
+                .executes(ctx -> restartServerOrWorld(ctx, StringArgumentType.getString(ctx, "worldId")))
+            )
+        );
+
+        root = root.then(CommandManager.literal("reset")
+            .then(CommandManager.argument("worldId", StringArgumentType.string())
+                .suggests((context, builder) -> {
+                    ModConfig config = TimedHarvestMod.getConfig();
+                    for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
+                        if (worldConfig.enabled) {
                             builder.suggest(worldConfig.worldId);
                         }
-                        return builder.buildFuture();
-                    })
-                    .executes(TimedHarvestCommands::statusSingle)))
-            // /timedharvest reload
-            .then(CommandManager.literal("reload")
-                .executes(TimedHarvestCommands::reloadConfig))
-            // /timedharvest tp <worldId> - Teleport to resource world
-            .then(CommandManager.literal("tp")
-                .then(CommandManager.argument("worldId", StringArgumentType.word())
-                    .suggests((context, builder) -> {
-                        // Add all enabled world IDs as suggestions
-                        ModConfig config = TimedHarvestMod.getConfig();
-                        for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
-                            if (worldConfig.enabled) {
-                                builder.suggest(worldConfig.worldId);
-                            }
+                    }
+                    return builder.buildFuture();
+                })
+                .then(CommandManager.argument("newseed", StringArgumentType.word())
+                    .executes(TimedHarvestCommands::resetWorldWithNewSeed)
+                )
+                .executes(TimedHarvestCommands::resetWorld)
+            )
+        );
+
+        root = root.then(CommandManager.literal("status")
+            .executes(TimedHarvestCommands::statusAll)
+            .then(CommandManager.argument("worldId", StringArgumentType.string())
+                .suggests((context, builder) -> {
+                    ModConfig config2 = TimedHarvestMod.getConfig();
+                    for (ModConfig.ResourceWorldConfig worldConfig : config2.resourceWorlds) {
+                        builder.suggest(worldConfig.worldId);
+                    }
+                    return builder.buildFuture();
+                })
+                .executes(TimedHarvestCommands::statusSingle))
+        );
+
+        root = root.then(CommandManager.literal("reload")
+            .executes(TimedHarvestCommands::reloadConfig));
+
+        root = root.then(CommandManager.literal("tp")
+            .then(CommandManager.argument("worldId", StringArgumentType.word())
+                .suggests((context, builder) -> {
+                    ModConfig config3 = TimedHarvestMod.getConfig();
+                    for (ModConfig.ResourceWorldConfig worldConfig : config3.resourceWorlds) {
+                        if (worldConfig.enabled) {
+                            builder.suggest(worldConfig.worldId);
                         }
-                        return builder.buildFuture();
-                    })
-                    .executes(TimedHarvestCommands::teleportToWorld)))
-            // /timedharvest spawn - Teleport to overworld spawn
-            .then(CommandManager.literal("spawn")
-                .executes(TimedHarvestCommands::teleportToSpawn))
-            // /timedharvest create <worldId> <dimensionName> <resetDays> [worldType] [seed] [borderSize] [structures]
-            .then(CommandManager.literal("create")
-                .then(CommandManager.argument("worldId", StringArgumentType.word())
-                    .then(CommandManager.argument("dimensionName", IdentifierArgumentType.identifier())
-                        .then(CommandManager.argument("resetDays", StringArgumentType.word())
+                    }
+                    return builder.buildFuture();
+                })
+                .executes(TimedHarvestCommands::teleportToWorld))
+        );
+
+        root = root.then(CommandManager.literal("spawn")
+            .executes(TimedHarvestCommands::teleportToSpawn));
+
+        root = root.then(CommandManager.literal("create")
+            .then(CommandManager.argument("worldId", StringArgumentType.word())
+                .then(CommandManager.argument("dimensionName", IdentifierArgumentType.identifier())
+                    .then(CommandManager.argument("resetDays", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 28))
+                        .suggests(resetDaysSuggester)
+                        .executes(TimedHarvestCommands::createWorld)
+                        .then(CommandManager.argument("worldType", IdentifierArgumentType.identifier())
                             .suggests((context, builder) -> {
-                                for (int d : RESET_DAYS) builder.suggest(Integer.toString(d));
+                                builder.suggest("minecraft:overworld");
+                                builder.suggest("minecraft:the_nether");
+                                builder.suggest("minecraft:the_end");
                                 return builder.buildFuture();
                             })
-                            // Basic: /timedharvest create <worldId> <dimensionName> <resetDays>
-                            .executes(TimedHarvestCommands::createWorld)
-                            // With worldType: /timedharvest create <worldId> <dimensionName> <resetDays> <worldType>
-                            .then(CommandManager.argument("worldType", IdentifierArgumentType.identifier())
-                                .suggests((context, builder) -> {
-                                    builder.suggest("minecraft:overworld");
-                                    builder.suggest("minecraft:the_nether");
-                                    builder.suggest("minecraft:the_end");
-                                    return builder.buildFuture();
-                                })
-                                .executes(TimedHarvestCommands::createWorldWithType)
-                                // With seed: /timedharvest create <worldId> <dimensionName> <resetHours> <worldType> <seed>
-                                .then(CommandManager.argument("seed", StringArgumentType.word())
-                                    .executes(TimedHarvestCommands::createWorldWithSeed)
-                                    // With border: /timedharvest create <worldId> <dimensionName> <resetHours> <worldType> <seed> <borderSize>
-                                    .then(CommandManager.argument("borderSize", StringArgumentType.word())
-                                        .executes(TimedHarvestCommands::createWorldWithBorder)
-                                        // Full: /timedharvest create <worldId> <dimensionName> <resetHours> <worldType> <seed> <borderSize> <structures>
-                                        .then(CommandManager.argument("structures", StringArgumentType.word())
-                                            .suggests((context, builder) -> {
-                                                builder.suggest("true");
-                                                builder.suggest("false");
-                                                return builder.buildFuture();
-                                            })
-                                            .executes(TimedHarvestCommands::createWorldFull)))))))))
-            
-            // /timedharvest enable <worldId>
-            .then(CommandManager.literal("enable")
-                .then(CommandManager.argument("worldId", StringArgumentType.word())
-                    .suggests((context, builder) -> {
-                        ModConfig config = TimedHarvestMod.getConfig();
-                        for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
-                            builder.suggest(worldConfig.worldId);
-                        }
-                        return builder.buildFuture();
-                    })
-                    .executes(TimedHarvestCommands::enableWorld)))
-            
-            // /timedharvest disable <worldId>
-            .then(CommandManager.literal("disable")
-                .then(CommandManager.argument("worldId", StringArgumentType.word())
-                    .suggests((context, builder) -> {
-                        ModConfig config = TimedHarvestMod.getConfig();
-                        for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
-                            builder.suggest(worldConfig.worldId);
-                        }
-                        return builder.buildFuture();
-                    })
-                    .executes(TimedHarvestCommands::disableWorld)))
-            
-            // /timedharvest delete <worldId>
-            .then(CommandManager.literal("delete")
-                .then(CommandManager.argument("worldId", StringArgumentType.word())
-                    .suggests((context, builder) -> {
-                        ModConfig config = TimedHarvestMod.getConfig();
-                        for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
-                            builder.suggest(worldConfig.worldId);
-                        }
-                        return builder.buildFuture();
-                    })
-                    .executes(TimedHarvestCommands::deleteWorld)))
-            
-            // /timedharvest help
-            .then(CommandManager.literal("help")
-                .executes(TimedHarvestCommands::showHelp)
-                .then(CommandManager.literal("troubleshooting")
-                    .executes(TimedHarvestCommands::showTroubleshooting)))
+                            .executes(TimedHarvestCommands::createWorldWithType)
+                            .then(CommandManager.argument("seed", StringArgumentType.word())
+                                .executes(TimedHarvestCommands::createWorldWithSeed)
+                                .then(CommandManager.argument("borderSize", StringArgumentType.word())
+                                    .executes(TimedHarvestCommands::createWorldWithBorder)
+                                    .then(CommandManager.argument("structures", StringArgumentType.word())
+                                        .suggests((context, builder) -> {
+                                            builder.suggest("true");
+                                            builder.suggest("false");
+                                            return builder.buildFuture();
+                                        })
+                                        .executes(TimedHarvestCommands::createWorldFull)
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
         );
+
+        root = root.then(CommandManager.literal("enable")
+            .then(CommandManager.argument("worldId", StringArgumentType.word())
+                .suggests((context, builder) -> {
+                    ModConfig config4 = TimedHarvestMod.getConfig();
+                    for (ModConfig.ResourceWorldConfig worldConfig : config4.resourceWorlds) {
+                        builder.suggest(worldConfig.worldId);
+                    }
+                    return builder.buildFuture();
+                })
+                .executes(TimedHarvestCommands::enableWorld))
+        );
+
+        root = root.then(CommandManager.literal("disable")
+            .then(CommandManager.argument("worldId", StringArgumentType.word())
+                .suggests((context, builder) -> {
+                    ModConfig config5 = TimedHarvestMod.getConfig();
+                    for (ModConfig.ResourceWorldConfig worldConfig : config5.resourceWorlds) {
+                        builder.suggest(worldConfig.worldId);
+                    }
+                    return builder.buildFuture();
+                })
+                .executes(TimedHarvestCommands::disableWorld))
+        );
+
+        root = root.then(CommandManager.literal("delete")
+            .then(CommandManager.argument("worldId", StringArgumentType.word())
+                .suggests((context, builder) -> {
+                    ModConfig config6 = TimedHarvestMod.getConfig();
+                    for (ModConfig.ResourceWorldConfig worldConfig : config6.resourceWorlds) {
+                        builder.suggest(worldConfig.worldId);
+                    }
+                    return builder.buildFuture();
+                })
+                .executes(TimedHarvestCommands::deleteWorld))
+        );
+
+        root = root.then(CommandManager.literal("help")
+            .executes(TimedHarvestCommands::showHelp)
+            .then(CommandManager.literal("troubleshooting")
+                .executes(TimedHarvestCommands::showTroubleshooting))
+        );
+
+        root = root.then(CommandManager.literal("setmain")
+            .then(CommandManager.argument("worldId", StringArgumentType.word())
+                .suggests((context, builder) -> {
+                    ModConfig config = TimedHarvestMod.getConfig();
+                    for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
+                        if (worldConfig.enabled) {
+                            builder.suggest(worldConfig.worldId);
+                        }
+                    }
+                    return builder.buildFuture();
+                })
+                .executes(TimedHarvestCommands::setMainWorld)
+            )
+        );
+
+        dispatcher.register(root);
+    }
+
+    /**
+     * Attempts to gracefully stop the server. If the host is configured to auto-restart, this will restart the server.
+     */
+    /**
+     * Handles /timedharvest restart [worldId] and /th restart [worldId].
+     * If worldId is provided, resets that world with a new seed. Otherwise, restarts the server.
+     */
+    private static int restartServerOrWorld(CommandContext<ServerCommandSource> context, String worldId) {
+        if (worldId == null || worldId.isEmpty()) {
+            context.getSource().sendFeedback(() -> Text.literal("§e⟳ §6Attempting to restart the server..."), true);
+            try {
+                context.getSource().getServer().stop(false); // false = not emergency, graceful shutdown
+            } catch (Exception e) {
+                context.getSource().sendError(Text.literal("§c§l✖ §cFailed to stop/restart the server: " + e.getMessage()));
+                return 0;
+            }
+            return 1;
+        } else {
+            ModConfig.ResourceWorldConfig worldConfig = findWorldConfig(worldId);
+            if (worldConfig == null) {
+                context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' not found in configuration!"));
+                return 0;
+            }
+            if (!worldConfig.enabled) {
+                context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' is disabled!"));
+                return 0;
+            }
+            context.getSource().sendFeedback(() -> Text.literal("§e⟳ §6Resetting resource world: §e§l" + worldId + "§6 with new random seed..."), true);
+            TimedHarvestMod.getScheduler().manualResetWithNewSeed(worldId, worldConfig);
+            context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aResource world '§e§l" + worldId + "§a' has been reset with a new random seed!"), true);
+            return 1;
+        }
+    }
+
+    /**
+     * Manually resets a resource world with a new random seed.
+     */
+    private static int resetWorldWithNewSeed(CommandContext<ServerCommandSource> context) {
+        String worldId = StringArgumentType.getString(context, "worldId");
+        ModConfig.ResourceWorldConfig worldConfig = findWorldConfig(worldId);
+        if (worldConfig == null) {
+            context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' not found in configuration!"));
+            return 0;
+        }
+        if (!worldConfig.enabled) {
+            context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' is disabled!"));
+            return 0;
+        }
+        context.getSource().sendFeedback(() -> Text.literal("§e⟳ §6Resetting resource world: §e§l" + worldId + "§6 with new random seed..."), true);
+        TimedHarvestMod.getScheduler().manualResetWithNewSeed(worldId, worldConfig);
+        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aResource world '§e§l" + worldId + "§a' has been reset with a new random seed!"), true);
+        return 1;
     }
 
     /**
@@ -457,16 +575,32 @@ public class TimedHarvestCommands {
         Identifier worldTypeId = IdentifierArgumentType.getIdentifier(context, "worldType");
         String worldType = worldTypeId.toString();
         String seedStr = StringArgumentType.getString(context, "seed");
-        
-        long seed;
-        try {
-            seed = Long.parseLong(seedStr);
-        } catch (NumberFormatException e) {
-            context.getSource().sendError(Text.literal("§cInvalid seed format! Use a number or 0 for random."));
-            return 0;
+
+        final long finalSeed;
+        boolean usedRandomSeed = false;
+        if (seedStr == null || seedStr.isEmpty() || seedStr.equals("0")) {
+            finalSeed = com.timedharvest.world.ResourceWorldManager.generateRandomSeed();
+            usedRandomSeed = true;
+        } else {
+            long parsedSeed;
+            try {
+                parsedSeed = Long.parseLong(seedStr);
+            } catch (NumberFormatException e) {
+                context.getSource().sendError(Text.literal("§cInvalid seed format! Use a number or leave blank for random."));
+                return 0;
+            }
+            if (parsedSeed == 0) {
+                finalSeed = com.timedharvest.world.ResourceWorldManager.generateRandomSeed();
+                usedRandomSeed = true;
+            } else {
+                finalSeed = parsedSeed;
+            }
         }
-        
-        return createWorldInternal(context, worldType, seed, 0, true);
+        int result = createWorldInternal(context, worldType, finalSeed, 0, true);
+        if (usedRandomSeed && result == 1) {
+            context.getSource().sendFeedback(() -> Text.literal("§7A random seed was generated: §a" + finalSeed), false);
+        }
+        return result;
     }
     
     /**
@@ -479,11 +613,15 @@ public class TimedHarvestCommands {
         String borderStr = StringArgumentType.getString(context, "borderSize");
         
         long seed;
-        try {
-            seed = Long.parseLong(seedStr);
-        } catch (NumberFormatException e) {
-            context.getSource().sendError(Text.literal("§cInvalid seed format! Use a number or 0 for random."));
-            return 0;
+        if (seedStr.isEmpty() || seedStr.equals("0")) {
+            seed = com.timedharvest.world.ResourceWorldManager.generateRandomSeed();
+        } else {
+            try {
+                seed = Long.parseLong(seedStr);
+            } catch (NumberFormatException e) {
+                context.getSource().sendError(Text.literal("§cInvalid seed format! Use a number or leave blank for random."));
+                return 0;
+            }
         }
         
         int borderSize;
@@ -512,11 +650,15 @@ public class TimedHarvestCommands {
         String structuresStr = StringArgumentType.getString(context, "structures");
         
         long seed;
-        try {
-            seed = Long.parseLong(seedStr);
-        } catch (NumberFormatException e) {
-            context.getSource().sendError(Text.literal("§cInvalid seed format! Use a number or 0 for random."));
-            return 0;
+        if (seedStr.isEmpty() || seedStr.equals("0")) {
+            seed = com.timedharvest.world.ResourceWorldManager.generateRandomSeed();
+        } else {
+            try {
+                seed = Long.parseLong(seedStr);
+            } catch (NumberFormatException e) {
+                context.getSource().sendError(Text.literal("§cInvalid seed format! Use a number or leave blank for random."));
+                return 0;
+            }
         }
         
         int borderSize;
@@ -544,12 +686,40 @@ public class TimedHarvestCommands {
         String worldId = StringArgumentType.getString(context, "worldId");
         Identifier dimensionNameId = IdentifierArgumentType.getIdentifier(context, "dimensionName");
         String dimensionName = dimensionNameId.toString();
-        String daysStr = StringArgumentType.getString(context, "resetDays");
+    int resetDays = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "resetDays");
 
-        // Check if world already exists
+
+        // Check if world already exists in config
         if (findWorldConfig(worldId) != null) {
             context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' already exists!"));
             return 0;
+        }
+
+        // Check if a world folder already exists for this dimension, and delete it if so
+        try {
+            String worldName = context.getSource().getServer().getSaveProperties().getLevelName();
+            java.nio.file.Path worldPath = context.getSource().getServer().getRunDirectory().toPath()
+                .resolve("saves")
+                .resolve(worldName)
+                .resolve("dimensions")
+                .resolve(new Identifier(dimensionName).getNamespace())
+                .resolve(new Identifier(dimensionName).getPath());
+            TimedHarvestMod.LOGGER.info("[TH] Checking for existing world folder at: {}", worldPath);
+            if (java.nio.file.Files.exists(worldPath)) {
+                TimedHarvestMod.LOGGER.info("[TH] Deleting existing world folder for dimension '{}': {}", dimensionName, worldPath);
+                java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(worldPath);
+                walk.sorted(java.util.Comparator.reverseOrder()).map(java.nio.file.Path::toFile).forEach(file -> {
+                    TimedHarvestMod.LOGGER.info("[TH] Deleting file/folder: {}", file.getAbsolutePath());
+                    file.delete();
+                });
+                walk.close();
+                context.getSource().sendFeedback(() -> Text.literal("§e§l⚠ §6Old world folder for dimension '" + dimensionName + "' was deleted to allow new seed to take effect."), false);
+            } else {
+                TimedHarvestMod.LOGGER.info("[TH] No existing world folder found for dimension '{}'.", dimensionName);
+            }
+        } catch (Exception e) {
+            TimedHarvestMod.LOGGER.error("[TH] Failed to check/delete old world folder for dimension '{}': {}", dimensionName, e.getMessage(), e);
+            context.getSource().sendError(Text.literal("§cFailed to check/delete old world folder: " + e.getMessage()));
         }
 
         // Validate dimension naming - prevent conflicts with vanilla dimension IDs
@@ -571,27 +741,7 @@ public class TimedHarvestCommands {
             return 0;
         }
 
-        // Parse reset days and validate
-        int resetDays;
-        try {
-            resetDays = Integer.parseInt(daysStr);
-            // Only allow specific day values
-            if (resetDays != 1 && resetDays != 2 && resetDays != 3 && resetDays != 4 && 
-                resetDays != 5 && resetDays != 6 && resetDays != 7 && resetDays != 14 && 
-                resetDays != 21 && resetDays != 28) {
-                context.getSource().sendError(Text.literal("§c§l✖ §cInvalid reset interval!"));
-                context.getSource().sendError(Text.literal(""));
-                context.getSource().sendError(Text.literal("§e§lAllowed values (in days):"));
-                context.getSource().sendError(Text.literal("  §a● §f1, 2, 3, 4, 5, 6, 7 §7(daily to weekly)"));
-                context.getSource().sendError(Text.literal("  §a● §f14 §7(bi-weekly)"));
-                context.getSource().sendError(Text.literal("  §a● §f21 §7(tri-weekly)"));
-                context.getSource().sendError(Text.literal("  §a● §f28 §7(monthly)"));
-                return 0;
-            }
-        } catch (NumberFormatException e) {
-            context.getSource().sendError(Text.literal("§cInvalid number format for reset days!"));
-            return 0;
-        }
+        // resetDays is already validated by the argument type and suggestions
 
         // Convert days to hours
         double resetHours = resetDays * 24.0;
@@ -602,7 +752,9 @@ public class TimedHarvestCommands {
         newWorld.dimensionName = dimensionName;
         newWorld.resetIntervalHours = resetHours;
         newWorld.worldType = worldType;
-        newWorld.seed = seed;
+    // Always use the provided seed (never 0)
+    newWorld.seed = seed;
+    TimedHarvestMod.LOGGER.info("[TH] Creating world '{}', dimension '{}', worldType '{}', seed {}, border {}, structures {}", worldId, dimensionName, worldType, seed, borderSize, generateStructures);
         newWorld.worldBorderSize = borderSize;
         newWorld.generateStructures = generateStructures;
         newWorld.enabled = true;
@@ -638,7 +790,8 @@ public class TimedHarvestCommands {
         // Get the final seed (may have been generated randomly)
         final long finalSeed = newWorld.seed;
         
-        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ Successfully Created Resource World!"), true);
+    context.getSource().sendFeedback(() -> Text.literal("§a§l✓ Successfully Created Resource World!"), true);
+    TimedHarvestMod.LOGGER.info("[TH] Resource world '{}' created with seed {} (final seed: {})", worldId, seed, finalSeed);
         context.getSource().sendFeedback(() -> Text.literal(""), false);
         context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"), false);
         context.getSource().sendFeedback(() -> Text.literal("§e§lWorld Settings:"), false);
@@ -651,7 +804,17 @@ public class TimedHarvestCommands {
         context.getSource().sendFeedback(() -> Text.literal("  §6● §eReset Interval: §f" + resetDays + " days §7(" + (int)resetHours + " hours)"), false);
         context.getSource().sendFeedback(() -> Text.literal(""), false);
         context.getSource().sendFeedback(() -> Text.literal("§e§lNext Steps:"), false);
-        context.getSource().sendFeedback(() -> Text.literal("  §a1. §f§lRestart §fthe server/game"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §a1. §f§l§e§lRESTART REQUIRED!"), false);
+        context.getSource().sendFeedback(() -> Text.literal("    §7You must restart the server/game to load the new dimension."), false);
+        context.getSource().sendFeedback(() -> Text.literal("    §6§lWhy? §fMinecraft only loads new dimensions on startup."), false);
+        context.getSource().sendFeedback(() -> Text.literal("    §eIf you do not restart, the new world will NOT be accessible!"), false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
+        // Add clickable /th restart reminder for admins
+        net.minecraft.text.ClickEvent clickRestart = new net.minecraft.text.ClickEvent(net.minecraft.text.ClickEvent.Action.RUN_COMMAND, "/timedharvest restart");
+        net.minecraft.text.Text restartText = net.minecraft.text.Text.literal("§a[Click here to restart the server now]")
+            .styled(style -> style.withColor(net.minecraft.util.Formatting.GREEN).withBold(true).withClickEvent(clickRestart).withHoverEvent(new net.minecraft.text.HoverEvent(net.minecraft.text.HoverEvent.Action.SHOW_TEXT, net.minecraft.text.Text.literal("§eRun /timedharvest restart (OP only)"))));
+        context.getSource().sendFeedback(() -> restartText, false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
         context.getSource().sendFeedback(() -> Text.literal("  §a2. §fRun: §6§l/timedharvest reset " + worldId), false);
         context.getSource().sendFeedback(() -> Text.literal("  §a3. §fAccess via §6§l/th §fgui or §6§l/timedharvest tp " + worldId), false);
         context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"), false);
@@ -740,10 +903,39 @@ public class TimedHarvestCommands {
         TimedHarvestMod.getConfig().save();
         TimedHarvestMod.reloadConfig();
 
-        // Delete world files (will happen on next server restart or manual reset)
+        // Actually delete world files from disk now
+        try {
+            Path worldPath = context.getSource().getServer().getRunDirectory().toPath()
+                .resolve("saves")
+                .resolve(context.getSource().getServer().getSaveProperties().getLevelName())
+                .resolve("dimensions")
+                .resolve(dimensionKey.getValue().getNamespace())
+                .resolve(dimensionKey.getValue().getPath());
+            TimedHarvestMod.LOGGER.info("[TH] Attempting to delete world folder for '{}': {}", worldId, worldPath);
+            if (java.nio.file.Files.exists(worldPath)) {
+                java.nio.file.Files.walk(worldPath)
+                    .sorted(java.util.Comparator.reverseOrder())
+                    .map(java.nio.file.Path::toFile)
+                    .forEach(file -> {
+                        TimedHarvestMod.LOGGER.info("[TH] Deleting file/folder: {}", file.getAbsolutePath());
+                        file.delete();
+                    });
+                if (!java.nio.file.Files.exists(worldPath)) {
+                    TimedHarvestMod.LOGGER.info("[TH] Successfully deleted world folder: {}", worldPath);
+                    context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aWorld files deleted from disk: " + worldPath), true);
+                } else {
+                    TimedHarvestMod.LOGGER.error("[TH] Failed to fully delete world folder: {}", worldPath);
+                    context.getSource().sendError(Text.literal("§c§l✗ §cFailed to fully delete world folder: " + worldPath));
+                }
+            } else {
+                TimedHarvestMod.LOGGER.info("[TH] World folder did not exist: {}", worldPath);
+                context.getSource().sendFeedback(() -> Text.literal("§7World folder did not exist: " + worldPath), true);
+            }
+        } catch (Exception e) {
+            TimedHarvestMod.LOGGER.error("[TH] Error deleting world files for '{}': {}", worldId, e.getMessage(), e);
+            context.getSource().sendError(Text.literal("§c§l✗ §cError deleting world files: " + e.getMessage()));
+        }
         context.getSource().sendFeedback(() -> Text.literal("§c§l✗ §cWorld '§e§l" + worldId + "§c' has been deleted from configuration!"), true);
-        context.getSource().sendFeedback(() -> Text.literal("§7World files will be removed on next server restart."), true);
-        
         return 1;
     }
 
@@ -879,5 +1071,22 @@ public class TimedHarvestCommands {
      */
     private static void setTeleportCooldown(ServerPlayerEntity player) {
         TELEPORT_COOLDOWNS.put(player.getUuid(), System.currentTimeMillis());
+    }
+    /**
+     * Sets the main world for evacuation after reset.
+     */
+    private static int setMainWorld(CommandContext<ServerCommandSource> context) {
+        String worldId = StringArgumentType.getString(context, "worldId");
+        ModConfig config = TimedHarvestMod.getConfig();
+        for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
+            if (worldConfig.worldId != null && worldConfig.worldId.equals(worldId) && worldConfig.enabled) {
+                config.mainWorldId = worldId;
+                config.save();
+                context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aSet '" + worldId + "' as the main world for evacuation."), false);
+                return 1;
+            }
+        }
+        context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' not found or not enabled!"));
+        return 0;
     }
 }

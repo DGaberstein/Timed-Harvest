@@ -42,7 +42,6 @@ public class AdminDashboardGui extends ScreenHandler {
     public AdminDashboardGui(int syncId, PlayerInventory playerInventory) {
         this(syncId, playerInventory, new SimpleInventory(54), (ServerPlayerEntity) playerInventory.player);
     }
-    // ...existing code...
 
     public AdminDashboardGui(int syncId, PlayerInventory playerInventory, Inventory inventory, ServerPlayerEntity player) {
         super(ScreenHandlerType.GENERIC_9X6, syncId);
@@ -121,9 +120,8 @@ public class AdminDashboardGui extends ScreenHandler {
         // Create World button
         ItemStack createItem = new ItemStack(Items.EMERALD);
         setItemNameAndLore(createItem, "§a§lCreate World", 
-            "§7Use command:",
-            "§6/timedharvest create",
-            "§7<worldId> <dimension> <hours>");
+            "§7Click to create a new resource world with a random seed.",
+            "§6/timedharvest create <worldId> <dimension> <resetDays> <worldType> <seed>");
         inventory.setStack(46, createItem);
         
         // Help button
@@ -204,6 +202,26 @@ public class AdminDashboardGui extends ScreenHandler {
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6Structures: " + (worldConfig.generateStructures ? "§a§lON" : "§c§lOFF")))));
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6Status: " + (worldConfig.enabled ? "§a§lENABLED" : "§c§lDISABLED")))));
 
+        // Show pending delete if world folder exists but not in config
+        java.io.File worldFolder = null;
+        try {
+            String worldName = TimedHarvestMod.getConfig().mainWorldId; // fallback to main world name
+            if (worldName == null || worldName.isEmpty()) {
+                worldName = "world";
+            }
+            java.io.File savesDir = new java.io.File("saves");
+            worldFolder = new java.io.File(savesDir, worldConfig.worldId);
+        } catch (Exception e) {
+            // ignore
+        }
+        boolean pendingDelete = false;
+        if (worldFolder != null && worldFolder.exists() && !TimedHarvestMod.getConfig().resourceWorlds.contains(worldConfig)) {
+            pendingDelete = true;
+        }
+        if (pendingDelete) {
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§c§lPENDING DELETE: World files will be removed on next restart!"))));
+        }
+
         // Next reset time if enabled
         if (worldConfig.enabled && TimedHarvestMod.getConfig().enableAutoReset) {
             long timeRemaining = TimedHarvestMod.getScheduler().getTimeUntilReset(worldConfig.worldId, worldConfig);
@@ -239,6 +257,34 @@ public class AdminDashboardGui extends ScreenHandler {
 
     @Override
     public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity player) {
+        // Handle Delete World button (slot 24)
+        if (slotIndex == 24 && actionType == SlotActionType.PICKUP) {
+            ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
+            // Find the worldId for this slot
+            int worldIdx = (currentPage * WORLDS_PER_PAGE) + ((24 - 10) / 2);
+            List<ModConfig.ResourceWorldConfig> worlds = TimedHarvestMod.getConfig().resourceWorlds;
+            if (worldIdx >= 0 && worldIdx < worlds.size()) {
+                String worldId = worlds.get(worldIdx).worldId;
+                serverPlayer.closeHandledScreen();
+                String cmd = String.format("timedharvest delete %s", worldId);
+                serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd);
+            }
+            return;
+        }
+        // Handle Create World button (slot 46)
+        if (slotIndex == 46 && actionType == SlotActionType.PICKUP) {
+            ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
+            // Generate a random worldId and seed
+            String worldId = "world_" + System.currentTimeMillis();
+            String dimension = "timed_harvest:custom_" + worldId;
+            int resetDays = 7; // Default to 7 days, or you could prompt/select
+            String worldType = "minecraft:overworld";
+            long seed = com.timedharvest.world.ResourceWorldManager.generateRandomSeed();
+            serverPlayer.closeHandledScreen();
+            String cmd = String.format("timedharvest create %s %s %d %s %d", worldId, dimension, resetDays, worldType, seed);
+            serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd);
+            return;
+        }
         // Prevent default behavior for GUI slots
         if (slotIndex < 0 || slotIndex >= 54) {
             super.onSlotClick(slotIndex, button, actionType, player);
@@ -255,73 +301,27 @@ public class AdminDashboardGui extends ScreenHandler {
             return;
         }
         
+        // Only handle navigation to submenu or toggling enabled/disabled
         ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
-        
-        // Handle different button clicks
-        switch (slotIndex) {
-            case 45: // Reload Config
-                handleReloadConfig(serverPlayer);
-                break;
-            case 46: // Create World
-                handleCreateWorld(serverPlayer);
-                break;
-            case 47: // Help
-                handleHelp(serverPlayer);
-                break;
-            case 48: // Previous Page
-                if (currentPage > 0) {
-                    currentPage--;
-                    populateInventory();
-                }
-                break;
-            case 50: // Next Page
-                List<ModConfig.ResourceWorldConfig> worlds = TimedHarvestMod.getConfig().resourceWorlds;
-                int totalPages = (int) Math.ceil((double) worlds.size() / WORLDS_PER_PAGE);
-                if (currentPage < totalPages - 1) {
-                    currentPage++;
-                    populateInventory();
-                }
-                break;
-            case 53: // Back arrow
-                serverPlayer.closeHandledScreen();
-                // Open the real Resource Worlds GUI (WorldSelectionGui)
-                serverPlayer.openHandledScreen(new net.minecraft.screen.SimpleNamedScreenHandlerFactory(
-                    (syncId, inv, p) -> new com.timedharvest.gui.WorldSelectionGui(syncId, inv, new net.minecraft.inventory.SimpleInventory(27), serverPlayer),
-                    net.minecraft.text.Text.literal("§6Resource Worlds")
-                ));
-                break;
-            default:
-                // Check if it's a world management item
-                handleWorldClick(serverPlayer, slotIndex, button);
-                break;
-        }
-    }
-
-    private void handleWorldClick(ServerPlayerEntity player, int slotIndex, int button) {
-        // World items are in slots 10-44 area, spaced out (only odd columns 1,3,5,7)
         List<ModConfig.ResourceWorldConfig> worlds = TimedHarvestMod.getConfig().resourceWorlds;
         int startIndex = currentPage * WORLDS_PER_PAGE;
-
-        // Only handle clicks in valid world item slots
         if (slotIndex < 10 || slotIndex > 44) return;
         int row = (slotIndex - 10) / 9;
         int col = (slotIndex - 10) % 9;
-        // Only odd columns (1,3,5,7) are used for world items
         if (col < 1 || col > 7 || col % 2 == 0) return;
         int indexInRow = (col - 1) / 2;
         int worldIndex = startIndex + (row * 4) + indexInRow;
         if (worldIndex < 0 || worldIndex >= worlds.size()) return;
         ModConfig.ResourceWorldConfig worldConfig = worlds.get(worldIndex);
-
         if (button == 0) { // Left click - show management options
-            player.closeHandledScreen();
-            showWorldManagementOptions(player, worldConfig);
+            serverPlayer.closeHandledScreen();
+            showWorldManagementOptions(serverPlayer, worldConfig);
         } else if (button == 1) { // Right click - toggle enabled/disabled
             worldConfig.enabled = !worldConfig.enabled;
             TimedHarvestMod.getConfig().save();
             populateInventory();
             String status = worldConfig.enabled ? "§a§lENABLED" : "§c§lDISABLED";
-            player.sendMessage(Text.literal("§6World '§e§l" + worldConfig.worldId + "§6' is now " + status));
+            serverPlayer.sendMessage(Text.literal("§6World '§e§l" + worldConfig.worldId + "§6' is now " + status));
         }
     }
 
@@ -376,6 +376,30 @@ public class AdminDashboardGui extends ScreenHandler {
         }
 
         private void populateButtons() {
+            // Restart World (reset with new seed)
+            ItemStack restartWorld = new ItemStack(Items.RESPAWN_ANCHOR);
+            setItemNameAndLore(restartWorld, "§eRestart World (New Seed)", "§7Reset this world with a new random seed (same as /timedharvest restart <worldId>)");
+            inventory.setStack(24, restartWorld);
+
+            // (No click handler here; handled in onSlotClick)
+            // Always show approve/cancel if world is not in config (pending delete)
+            if (!TimedHarvestMod.getConfig().resourceWorlds.contains(worldConfig)) {
+                ItemStack approve = new ItemStack(Items.LIME_CONCRETE);
+                setItemNameAndLore(approve, "§aAPPROVE DELETE", "§7Approve and close menu");
+                inventory.setStack(15, approve);
+                ItemStack cancel = new ItemStack(Items.RED_CONCRETE);
+                setItemNameAndLore(cancel, "§cCANCEL DELETE", "§7Restore world to config");
+                inventory.setStack(17, cancel);
+            }
+            // Delete World button (in world management submenu)
+            ItemStack deleteWorld = new ItemStack(Items.BARRIER);
+            setItemNameAndLore(deleteWorld, "§cDelete World Files", "§cDelete world files and remove from config");
+            inventory.setStack(20, deleteWorld);
+            // Reset with New Seed
+            ItemStack resetNewSeed = new ItemStack(Items.GLOWSTONE_DUST);
+            setItemNameAndLore(resetNewSeed, "§eReset with New Seed", "§7Reset this world and generate a new random seed");
+            inventory.setStack(11, resetNewSeed);
+            // Removed misplaced code for reset with new seed
             // Reset
             ItemStack reset = new ItemStack(Items.REDSTONE_BLOCK);
             setItemNameAndLore(reset, "§e/timedharvest reset", "§7Manually reset this world");
@@ -442,9 +466,29 @@ public class AdminDashboardGui extends ScreenHandler {
             }
             ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
             switch (slotIndex) {
+                case 24: // Restart World (New Seed)
+                    serverPlayer.closeHandledScreen();
+                    if (worldConfig != null) {
+                        String worldId = worldConfig.worldId;
+                        String cmd = String.format("timedharvest restart %s", worldId);
+                        serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd);
+                    }
+                    break;
+                case 20: // Delete World Files (new button)
+                    serverPlayer.closeHandledScreen();
+                    if (worldConfig != null) {
+                        String worldId = worldConfig.worldId;
+                        String cmd = String.format("timedharvest deleteworld %s", worldId);
+                        serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd);
+                    }
+                    break;
                 case 10: // Reset
                     serverPlayer.closeHandledScreen();
                     serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest reset " + worldConfig.worldId);
+                    break;
+                case 11: // Reset with New Seed
+                    serverPlayer.closeHandledScreen();
+                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest reset " + worldConfig.worldId + " newseed");
                     break;
                 case 12: // TP
                     serverPlayer.closeHandledScreen();
@@ -510,63 +554,6 @@ public class AdminDashboardGui extends ScreenHandler {
         }
     }
 
-    private void handleReloadConfig(ServerPlayerEntity player) {
-        player.closeHandledScreen();
-        TimedHarvestMod.reloadConfig();
-        player.sendMessage(Text.literal("§a§l✓ §aConfiguration reloaded successfully!"));
-    }
-
-    private void handleCreateWorld(ServerPlayerEntity player) {
-        player.closeHandledScreen();
-        player.sendMessage(Text.literal("§6§l▬▬▬▬ §e§lCreate World Command §6§l▬▬▬▬"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("§e§lUsage:"));
-        player.sendMessage(Text.literal("  §6/timedharvest create §7<worldId> <dimension> <days>"));
-        player.sendMessage(Text.literal("                       §7[type] [seed] [border] [structures]"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("§e§lAllowed Days:"));
-            player.sendMessage(Text.literal("  §a● §f1, 2, 3, 4, 5, 6, 7 §7(daily to weekly)"));
-            player.sendMessage(Text.literal("  §a● §f14 §7(bi-weekly)"));
-            player.sendMessage(Text.literal("  §a● §f21 §7(tri-weekly)"));
-            player.sendMessage(Text.literal("  §a● §f28 §7(monthly)"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("§e§lExamples:"));
-        player.sendMessage(Text.literal("  §7Weekly: §f/th create §enether §atimed_harvest:nether §67"));
-        player.sendMessage(Text.literal("           §f          §e...... §aminecraft:the_nether §67"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("  §7Bi-weekly: §f/th create §eend §atimed_harvest:end §614"));
-        player.sendMessage(Text.literal("              §f          §e... §aminecraft:the_end §614"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("  §7Daily: §f/th create §emining §atimed_harvest:mining §61"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("§8Tip: See §7/timedharvest help §8for more info"));
-        player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"));
-    }
-
-    private void handleHelp(ServerPlayerEntity player) {
-        player.closeHandledScreen();
-    player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬ §e§lTimed Harvest Commands §6§l▬▬▬▬▬▬▬"));
-    player.sendMessage(Text.literal(""));
-    player.sendMessage(Text.literal("§6§l● §eWorld Management:"));
-    player.sendMessage(Text.literal("  §6/th admin §8- §fOpen this dashboard"));
-    player.sendMessage(Text.literal("  §6/timedharvest reset §7<worldId> §8- §fManually reset a world"));
-    player.sendMessage(Text.literal("  §6/timedharvest status §7[worldId] §8- §fShow reset status"));
-    player.sendMessage(Text.literal("  §6/timedharvest tp §7<worldId> §8- §fTeleport to world"));
-    player.sendMessage(Text.literal(""));
-    player.sendMessage(Text.literal("§6§l● §eConfiguration:"));
-    player.sendMessage(Text.literal("  §6/timedharvest reload §8- §fReload configuration"));
-    player.sendMessage(Text.literal("  §6/timedharvest enable §7<worldId> §8- §fEnable a world"));
-    player.sendMessage(Text.literal("  §6/timedharvest disable §7<worldId> §8- §fDisable a world"));
-    player.sendMessage(Text.literal("  §6/timedharvest delete §7<worldId> §8- §fDelete from config"));
-    player.sendMessage(Text.literal(""));
-    player.sendMessage(Text.literal("§6§l● §eEvacuation Main World:"));
-    player.sendMessage(Text.literal("  §7The highest-level admin can set a resource world as the main world for evacuation after reset."));
-    player.sendMessage(Text.literal("  §7Players will be teleported to this world after a reset, or to the overworld if not set."));
-    player.sendMessage(Text.literal(""));
-    player.sendMessage(Text.literal("§6§l● §eHelp:"));
-    player.sendMessage(Text.literal("  §6/timedharvest help troubleshooting §8- §fCommon fixes"));
-    player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"));
-    }
-
+    // End of AdminDashboardGui class
 }
 

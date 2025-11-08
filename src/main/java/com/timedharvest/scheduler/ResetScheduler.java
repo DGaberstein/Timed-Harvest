@@ -20,6 +20,20 @@ import java.util.Map;
  * Uses server tick system to track time and trigger resets.
  */
 public class ResetScheduler {
+    /**
+     * Manually resets a world and forces a new random seed.
+     */
+    public void manualResetWithNewSeed(String worldId, ResourceWorldConfig config) {
+        // Always force a new random seed (even if previous was custom)
+        config.seed = new java.util.Random().nextLong();
+        TimedHarvestMod.getConfig().save(); // Ensure the new seed is persisted before reset
+        TimedHarvestMod.LOGGER.info("[TimedHarvest] Set new random seed for world '{}': {}", worldId, config.seed);
+        if (worldManager.resetWorld(worldId, config)) {
+            lastResetTimes.put(worldId, System.currentTimeMillis());
+            warningSent.put(worldId, false);
+            saveState();
+        }
+    }
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final File STATE_FILE = new File("config/timed-harvest-state.json");
     private static final int TICKS_PER_SECOND = 20;
