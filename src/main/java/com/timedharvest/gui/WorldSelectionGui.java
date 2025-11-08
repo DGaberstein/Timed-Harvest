@@ -91,6 +91,19 @@ public class WorldSelectionGui extends ScreenHandler {
     }
 
     private void populateInventory() {
+        // Settings Info (slot 21) for L2+ users
+        if (player != null && player.hasPermissionLevel(2)) {
+            ItemStack settingsInfo = new ItemStack(Items.BOOK);
+            setItemNameAndLore(settingsInfo, "§b§lAll Available Settings",
+                "§7centerX: Center X of the world border.",
+                "§7centerZ: Center Z of the world border.",
+                "§7range: World border radius.",
+                "§7spawnPoint: Resource world spawn point.",
+                "§7cooldown: /resourceworld tp cooldown.",
+                "§7hideSeedHash: Whether hide resource world seed hash from players,",
+                "§7open this can partly prevent seed cracking but may cause wrong biome sounds and sky colors.");
+            inventory.setStack(21, settingsInfo);
+        }
         inventory.clear();
         
         int totalWorlds = enabledWorlds.size();

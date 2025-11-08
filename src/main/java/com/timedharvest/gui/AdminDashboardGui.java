@@ -177,42 +177,47 @@ public class AdminDashboardGui extends ScreenHandler {
         NbtCompound nbt = item.getOrCreateNbt();
         NbtCompound display = new NbtCompound();
         
-        // Title - world ID with status
-        String status = worldConfig.enabled ? "§a●" : "§c●";
-        display.putString("Name", Text.Serializer.toJson(Text.literal(status + " §e§l" + worldConfig.worldId)));
+    // Title - world ID with status
+    String status = worldConfig.enabled ? "§a●" : "§c●";
+    boolean isMain = TimedHarvestMod.getConfig().mainWorldId != null && TimedHarvestMod.getConfig().mainWorldId.equals(worldConfig.worldId);
+    String mainTag = isMain ? " §e★" : "";
+    display.putString("Name", Text.Serializer.toJson(Text.literal(status + " §e§l" + worldConfig.worldId + mainTag)));
         
         // Lore with details
         NbtList lore = new NbtList();
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§7▬▬▬▬▬▬▬▬▬▬▬▬▬▬").formatted(Formatting.DARK_GRAY))));
+        if (isMain) {
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§e★ Main World for evacuation after reset"))));
+        }
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6Dimension: §f" + worldConfig.dimensionName))));
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6World Type: §f" + worldType))));
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6Reset Interval: §f" + worldConfig.resetIntervalHours + "h"))));
-        
+
         if (worldConfig.seed != 0) {
             lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6Seed: §f" + worldConfig.seed))));
         }
-        
+
         if (worldConfig.worldBorderSize > 0) {
             lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6Border: §f" + worldConfig.worldBorderSize + " blocks"))));
         }
-        
+
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6Structures: " + (worldConfig.generateStructures ? "§a§lON" : "§c§lOFF")))));
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6Status: " + (worldConfig.enabled ? "§a§lENABLED" : "§c§lDISABLED")))));
-        
+
         // Next reset time if enabled
         if (worldConfig.enabled && TimedHarvestMod.getConfig().enableAutoReset) {
             long timeRemaining = TimedHarvestMod.getScheduler().getTimeUntilReset(worldConfig.worldId, worldConfig);
             String timeStr = ResetScheduler.formatTime(timeRemaining);
             lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§6Next Reset: §a" + timeStr))));
         }
-        
+
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal(""))));
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§e§l▶ LEFT CLICK §7to manage"))));
         lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("§c§l▶ RIGHT CLICK §7to toggle"))));
-        
+
         display.put("Lore", lore);
         nbt.put("display", display);
-        
+
         return item;
     }
 
@@ -391,6 +396,16 @@ public class AdminDashboardGui extends ScreenHandler {
             setItemNameAndLore(toggle, worldConfig.enabled ? "§c/timedharvest disable" : "§a/timedharvest enable", worldConfig.enabled ? "§7Disable this world" : "§7Enable this world");
             inventory.setStack(16, toggle);
 
+            // Set as Main World (only for highest-level user)
+            if (player.hasPermissionLevel(4)) {
+                ItemStack mainWorld = new ItemStack(Items.NETHER_STAR);
+                boolean isMain = TimedHarvestMod.getConfig().mainWorldId != null && TimedHarvestMod.getConfig().mainWorldId.equals(worldConfig.worldId);
+                setItemNameAndLore(mainWorld,
+                    isMain ? "§e§lMain World (Current)" : "§eSet as Main World",
+                    isMain ? "§aThis is the current main world for evacuation." : "§7Click to set this world as the main world for evacuation after reset.");
+                inventory.setStack(18, mainWorld);
+            }
+
             // Delete
             ItemStack delete = new ItemStack(Items.BARRIER);
             setItemNameAndLore(delete, "§c/timedharvest delete", "§cRemove from configuration");
@@ -443,6 +458,15 @@ public class AdminDashboardGui extends ScreenHandler {
                     serverPlayer.closeHandledScreen();
                     String cmd = worldConfig.enabled ? "timedharvest disable " : "timedharvest enable ";
                     serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd + worldConfig.worldId);
+                    break;
+                case 18: // Set as Main World (Nether Star)
+                    if (serverPlayer.hasPermissionLevel(4)) {
+                        ModConfig config = TimedHarvestMod.getConfig();
+                        config.mainWorldId = worldConfig.worldId;
+                        config.save();
+                        serverPlayer.sendMessage(Text.literal("§a§l✓ §aSet '" + worldConfig.worldId + "' as the main world for evacuation."));
+                        populateButtons();
+                    }
                     break;
                 case 22: // Delete
                     serverPlayer.closeHandledScreen();
@@ -521,23 +545,27 @@ public class AdminDashboardGui extends ScreenHandler {
 
     private void handleHelp(ServerPlayerEntity player) {
         player.closeHandledScreen();
-        player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬ §e§lTimed Harvest Commands §6§l▬▬▬▬▬▬▬"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("§6§l● §eWorld Management:"));
-        player.sendMessage(Text.literal("  §6/th admin §8- §fOpen this dashboard"));
-        player.sendMessage(Text.literal("  §6/timedharvest reset §7<worldId> §8- §fManually reset a world"));
-        player.sendMessage(Text.literal("  §6/timedharvest status §7[worldId] §8- §fShow reset status"));
-        player.sendMessage(Text.literal("  §6/timedharvest tp §7<worldId> §8- §fTeleport to world"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("§6§l● §eConfiguration:"));
-        player.sendMessage(Text.literal("  §6/timedharvest reload §8- §fReload configuration"));
-        player.sendMessage(Text.literal("  §6/timedharvest enable §7<worldId> §8- §fEnable a world"));
-        player.sendMessage(Text.literal("  §6/timedharvest disable §7<worldId> §8- §fDisable a world"));
-        player.sendMessage(Text.literal("  §6/timedharvest delete §7<worldId> §8- §fDelete from config"));
-        player.sendMessage(Text.literal(""));
-        player.sendMessage(Text.literal("§6§l● §eHelp:"));
-        player.sendMessage(Text.literal("  §6/timedharvest help troubleshooting §8- §fCommon fixes"));
-        player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"));
+    player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬ §e§lTimed Harvest Commands §6§l▬▬▬▬▬▬▬"));
+    player.sendMessage(Text.literal(""));
+    player.sendMessage(Text.literal("§6§l● §eWorld Management:"));
+    player.sendMessage(Text.literal("  §6/th admin §8- §fOpen this dashboard"));
+    player.sendMessage(Text.literal("  §6/timedharvest reset §7<worldId> §8- §fManually reset a world"));
+    player.sendMessage(Text.literal("  §6/timedharvest status §7[worldId] §8- §fShow reset status"));
+    player.sendMessage(Text.literal("  §6/timedharvest tp §7<worldId> §8- §fTeleport to world"));
+    player.sendMessage(Text.literal(""));
+    player.sendMessage(Text.literal("§6§l● §eConfiguration:"));
+    player.sendMessage(Text.literal("  §6/timedharvest reload §8- §fReload configuration"));
+    player.sendMessage(Text.literal("  §6/timedharvest enable §7<worldId> §8- §fEnable a world"));
+    player.sendMessage(Text.literal("  §6/timedharvest disable §7<worldId> §8- §fDisable a world"));
+    player.sendMessage(Text.literal("  §6/timedharvest delete §7<worldId> §8- §fDelete from config"));
+    player.sendMessage(Text.literal(""));
+    player.sendMessage(Text.literal("§6§l● §eEvacuation Main World:"));
+    player.sendMessage(Text.literal("  §7The highest-level admin can set a resource world as the main world for evacuation after reset."));
+    player.sendMessage(Text.literal("  §7Players will be teleported to this world after a reset, or to the overworld if not set."));
+    player.sendMessage(Text.literal(""));
+    player.sendMessage(Text.literal("§6§l● §eHelp:"));
+    player.sendMessage(Text.literal("  §6/timedharvest help troubleshooting §8- §fCommon fixes"));
+    player.sendMessage(Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"));
     }
 
 }
