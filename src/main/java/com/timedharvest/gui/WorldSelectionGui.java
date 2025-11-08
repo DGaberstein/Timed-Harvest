@@ -360,7 +360,8 @@ public class WorldSelectionGui extends ScreenHandler {
         return -1; // Not a world slot
     }
 
-    private void teleportToWorld(ServerPlayerEntity player, ModConfig.ResourceWorldConfig worldConfig) {
+    // Make teleportToWorld public static for AdminDashboardGui integration
+    public static void teleportToWorld(ServerPlayerEntity player, ModConfig.ResourceWorldConfig worldConfig) {
         // Check teleport cooldown
         if (!checkTeleportCooldown(player)) {
             long remainingMs = getRemainingCooldown(player);
@@ -436,7 +437,7 @@ public class WorldSelectionGui extends ScreenHandler {
     /**
      * Checks if a player can teleport (cooldown expired).
      */
-    private boolean checkTeleportCooldown(ServerPlayerEntity player) {
+    private static boolean checkTeleportCooldown(ServerPlayerEntity player) {
         UUID playerId = player.getUuid();
         long currentTime = System.currentTimeMillis();
         
@@ -451,7 +452,7 @@ public class WorldSelectionGui extends ScreenHandler {
     /**
      * Gets the remaining cooldown time in milliseconds.
      */
-    private long getRemainingCooldown(ServerPlayerEntity player) {
+    private static long getRemainingCooldown(ServerPlayerEntity player) {
         UUID playerId = player.getUuid();
         long currentTime = System.currentTimeMillis();
         
@@ -467,7 +468,7 @@ public class WorldSelectionGui extends ScreenHandler {
     /**
      * Sets the teleport cooldown for a player.
      */
-    private void setTeleportCooldown(ServerPlayerEntity player) {
+    private static void setTeleportCooldown(ServerPlayerEntity player) {
         TELEPORT_COOLDOWNS.put(player.getUuid(), System.currentTimeMillis());
     }
 

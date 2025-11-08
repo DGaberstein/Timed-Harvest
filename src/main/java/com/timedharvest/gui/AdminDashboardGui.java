@@ -79,7 +79,7 @@ public class AdminDashboardGui extends ScreenHandler {
             }
             // Populate confirmation button
             ItemStack confirm = new ItemStack(approved ? Items.LIME_CONCRETE : Items.RED_CONCRETE);
-            setItemNameAndLore(confirm, approved ? "§aCONFIRM APPROVED" : "§cCONFIRM CANCEL", approved ? "§7Confirm the APPROVED action" : "§7Confirm the CANCEL action");
+            setItemNameAndLore(confirm, approved ? "§aCONFIRM" : "§cCONFIRM CANCEL", approved ? "§7Confirm this action" : "§7Confirm the CANCEL action");
             inventory.setStack(4, confirm);
         }
         @Override
@@ -341,6 +341,33 @@ public class AdminDashboardGui extends ScreenHandler {
 
     @Override
     public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity player) {
+        // Handle Reload Config button (slot 45)
+        if (slotIndex == 45 && actionType == SlotActionType.PICKUP) {
+            TimedHarvestMod.reloadConfig();
+            ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
+            serverPlayer.sendMessage(Text.literal("§a[Timed Harvest] Config reloaded!"));
+            populateInventory();
+            return;
+        }
+        // Handle Help & Commands button (slot 47)
+        if (slotIndex == 47 && actionType == SlotActionType.PICKUP) {
+            ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
+            serverPlayer.closeHandledScreen();
+            // Show help (could open a new GUI or send chat message)
+            serverPlayer.sendMessage(Text.literal("§b[Timed Harvest] See /th help or /timedharvest help for all commands."));
+            return;
+        }
+        // Handle Back button (slot 53)
+        if (slotIndex == 53 && actionType == SlotActionType.PICKUP) {
+            ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
+            serverPlayer.closeHandledScreen();
+            // Return to Resource Worlds GUI
+            serverPlayer.openHandledScreen(new net.minecraft.screen.SimpleNamedScreenHandlerFactory(
+                (syncId, inv, p) -> new com.timedharvest.gui.WorldSelectionGui(syncId, inv, new net.minecraft.inventory.SimpleInventory(27), serverPlayer),
+                Text.literal("§e§lResource Worlds")
+            ));
+            return;
+        }
         // Handle Delete World button (slot 24)
         if (slotIndex == 24 && actionType == SlotActionType.PICKUP) {
             ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
@@ -465,30 +492,10 @@ public class AdminDashboardGui extends ScreenHandler {
             setItemNameAndLore(restartWorld, "§eRestart World (New Seed)", "§7Reset this world with a new random seed (same as /timedharvest restart <worldId>)");
             inventory.setStack(24, restartWorld);
 
-            // (No click handler here; handled in onSlotClick)
-            // Always show approve/cancel if world is not in config (pending delete)
-            if (!TimedHarvestMod.getConfig().resourceWorlds.contains(worldConfig)) {
-                ItemStack approve = new ItemStack(Items.LIME_CONCRETE);
-                setItemNameAndLore(approve, "§aAPPROVE DELETE", "§7Approve and close menu");
-                inventory.setStack(15, approve);
-                ItemStack cancel = new ItemStack(Items.RED_CONCRETE);
-                setItemNameAndLore(cancel, "§cCANCEL DELETE", "§7Restore world to config");
-                inventory.setStack(17, cancel);
-            }
             // Delete World button (in world management submenu)
             ItemStack deleteWorld = new ItemStack(Items.BARRIER);
             setItemNameAndLore(deleteWorld, "§cDelete World Files", "§cDelete world files and remove from config");
             inventory.setStack(20, deleteWorld);
-
-            // Permission level 2+ buttons: APPROVED and CANCEL
-            if (player.hasPermissionLevel(2)) {
-                ItemStack approve = new ItemStack(Items.LIME_CONCRETE);
-                setItemNameAndLore(approve, "§aAPPROVED", "§7Approve and close menu");
-                inventory.setStack(15, approve);
-                ItemStack cancel = new ItemStack(Items.RED_CONCRETE);
-                setItemNameAndLore(cancel, "§cCANCEL", "§7Cancel and close menu");
-                inventory.setStack(17, cancel);
-            }
             // Reset with New Seed
             ItemStack resetNewSeed = new ItemStack(Items.GLOWSTONE_DUST);
             setItemNameAndLore(resetNewSeed, "§eReset with New Seed", "§7Reset this world and generate a new random seed");
@@ -555,15 +562,37 @@ public class AdminDashboardGui extends ScreenHandler {
         @Override
         public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity player) {
             ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
-            if (slotIndex == 15 && actionType == SlotActionType.PICKUP && player.hasPermissionLevel(2)) { // APPROVED
-                serverPlayer.closeHandledScreen();
-                serverPlayer.openHandledScreen(new AdminDashboardGui.ConfirmationGuiFactory(true));
-                return;
-            }
-            if (slotIndex == 17 && actionType == SlotActionType.PICKUP && player.hasPermissionLevel(2)) { // CANCEL
-                serverPlayer.closeHandledScreen();
-                serverPlayer.openHandledScreen(new AdminDashboardGui.ConfirmationGuiFactory(false));
-                return;
+            // Only handle approve/cancel for pending delete
+            if (!TimedHarvestMod.getConfig().resourceWorlds.contains(worldConfig)) {
+                if (slotIndex == 15 && actionType == SlotActionType.PICKUP) { // APPROVE DELETE
+                    serverPlayer.closeHandledScreen();
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("Are you sure you want to approve delete?", () -> {
+                        // Actually delete the world folder
+                        java.io.File worldFolder = new java.io.File("saves", worldConfig.worldId);
+                        if (worldFolder.exists()) {
+                            TimedHarvestMod.deleteWorldFolder(worldFolder);
+                        }
+                        // Remove from config if present
+                        TimedHarvestMod.getConfig().resourceWorlds.remove(worldConfig);
+                        TimedHarvestMod.getConfig().save();
+                        serverPlayer.sendMessage(Text.literal("§aWorld files deleted and removed from config."));
+                    }, () -> {
+                        serverPlayer.sendMessage(Text.literal("§eDelete cancelled."));
+                    }));
+                    return;
+                }
+                if (slotIndex == 17 && actionType == SlotActionType.PICKUP) { // CANCEL DELETE
+                    serverPlayer.closeHandledScreen();
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("Are you sure you want to cancel delete?", () -> {
+                        // Restore world to config (if not present)
+                        if (!TimedHarvestMod.getConfig().resourceWorlds.contains(worldConfig)) {
+                            TimedHarvestMod.getConfig().resourceWorlds.add(worldConfig);
+                            TimedHarvestMod.getConfig().save();
+                        }
+                        serverPlayer.sendMessage(Text.literal("§aWorld restored to config."));
+                    }, null));
+                    return;
+                }
             }
             if (slotIndex < 0 || slotIndex >= 27 || actionType != SlotActionType.PICKUP) {
                 super.onSlotClick(slotIndex, button, actionType, player);
@@ -572,57 +601,88 @@ public class AdminDashboardGui extends ScreenHandler {
             switch (slotIndex) {
                 case 24: // Restart World (New Seed)
                     serverPlayer.closeHandledScreen();
-                    if (worldConfig != null) {
-                        String worldId = worldConfig.worldId;
-                        String cmd = String.format("timedharvest restart %s", worldId);
-                        serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd);
-                    }
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("Restart world with a new random seed?", () -> {
+                        // Set a new random seed and reset
+                        worldConfig.seed = com.timedharvest.world.ResourceWorldManager.generateRandomSeed();
+                        ResetScheduler.resetWorld(worldConfig.worldId, worldConfig);
+                        TimedHarvestMod.getConfig().save();
+                        serverPlayer.sendMessage(Text.literal("§aWorld restarted with a new random seed."));
+                    }, null));
                     break;
                 case 20: // Delete World Files (new button)
                     serverPlayer.closeHandledScreen();
-                    if (worldConfig != null) {
-                        String worldId = worldConfig.worldId;
-                        String cmd = String.format("timedharvest delete %s", worldId);
-                        serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd);
-                    }
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("Delete world files and remove from config?", () -> {
+                        java.io.File worldFolder = new java.io.File("saves", worldConfig.worldId);
+                        if (worldFolder.exists()) {
+                            TimedHarvestMod.deleteWorldFolder(worldFolder);
+                        }
+                        TimedHarvestMod.getConfig().resourceWorlds.remove(worldConfig);
+                        TimedHarvestMod.getConfig().save();
+                        serverPlayer.sendMessage(Text.literal("§aWorld files deleted and removed from config."));
+                    }, null));
                     break;
                 case 10: // Reset
                     serverPlayer.closeHandledScreen();
-                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest reset " + worldConfig.worldId);
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("Reset this world?", () -> {
+                        ResetScheduler.resetWorld(worldConfig.worldId, worldConfig);
+                        TimedHarvestMod.getConfig().save();
+                        serverPlayer.sendMessage(Text.literal("§aWorld reset."));
+                    }, null));
                     break;
                 case 11: // Reset with New Seed
                     serverPlayer.closeHandledScreen();
-                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest reset " + worldConfig.worldId + " newseed");
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("Reset with a new random seed?", () -> {
+                        worldConfig.seed = com.timedharvest.world.ResourceWorldManager.generateRandomSeed();
+                        ResetScheduler.resetWorld(worldConfig.worldId, worldConfig);
+                        TimedHarvestMod.getConfig().save();
+                        serverPlayer.sendMessage(Text.literal("§aWorld reset with a new random seed."));
+                    }, null));
                     break;
                 case 12: // TP
                     serverPlayer.closeHandledScreen();
-                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest tp " + worldConfig.worldId);
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("Teleport to this world?", () -> {
+                        com.timedharvest.gui.WorldSelectionGui.teleportToWorld(serverPlayer, worldConfig);
+                    }, null));
                     break;
                 case 14: // Status
                     serverPlayer.closeHandledScreen();
-                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest status " + worldConfig.worldId);
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("View detailed status?", () -> {
+                        serverPlayer.sendMessage(Text.literal(worldConfig.toString()));
+                    }, null));
                     break;
                 case 16: // Enable/Disable
                     serverPlayer.closeHandledScreen();
-                    String cmd = worldConfig.enabled ? "timedharvest disable " : "timedharvest enable ";
-                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd + worldConfig.worldId);
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui((worldConfig.enabled ? "Disable" : "Enable") + " this world?", () -> {
+                        worldConfig.enabled = !worldConfig.enabled;
+                        TimedHarvestMod.getConfig().save();
+                        serverPlayer.sendMessage(Text.literal("§aWorld " + (worldConfig.enabled ? "enabled" : "disabled") + "."));
+                    }, null));
                     break;
                 case 18: // Set as Main World (Nether Star)
                     if (serverPlayer.hasPermissionLevel(4)) {
-                        ModConfig config = TimedHarvestMod.getConfig();
-                        config.mainWorldId = worldConfig.worldId;
-                        config.save();
-                        serverPlayer.sendMessage(Text.literal("§a§l✓ §aSet '" + worldConfig.worldId + "' as the main world for evacuation."));
-                        populateButtons();
+                        serverPlayer.closeHandledScreen();
+                        serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("Set this world as the main world for evacuation?", () -> {
+                            TimedHarvestMod.getConfig().mainWorldId = worldConfig.worldId;
+                            TimedHarvestMod.getConfig().save();
+                            serverPlayer.sendMessage(Text.literal("§aSet as main world for evacuation."));
+                        }, null));
                     }
                     break;
                 case 22: // Delete
                     serverPlayer.closeHandledScreen();
-                    serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), "timedharvest delete " + worldConfig.worldId);
+                    serverPlayer.openHandledScreen(new ConfirmAndOrCancelGui("Remove from configuration?", () -> {
+                        TimedHarvestMod.getConfig().resourceWorlds.remove(worldConfig);
+                        TimedHarvestMod.getConfig().save();
+                        serverPlayer.sendMessage(Text.literal("§aWorld removed from config."));
+                    }, null));
                     break;
                 case 26: // Back
                     serverPlayer.closeHandledScreen();
-                    serverPlayer.openHandledScreen(new AdminDashboardGui.AdminDashboardGuiFactory());
+                    // Return to Resource Worlds GUI
+                    serverPlayer.openHandledScreen(new net.minecraft.screen.SimpleNamedScreenHandlerFactory(
+                        (syncId, inv, p) -> new com.timedharvest.gui.WorldSelectionGui(syncId, inv, new net.minecraft.inventory.SimpleInventory(27), serverPlayer),
+                        Text.literal("§e§lResource Worlds")
+                    ));
                     break;
                 default:
                     break;

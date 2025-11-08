@@ -90,4 +90,20 @@ public class TimedHarvestMod implements ModInitializer {
         config = ModConfig.load();
         LOGGER.info("Configuration reloaded");
     }
+
+    // Utility to delete a world folder recursively
+    public static boolean deleteWorldFolder(java.io.File dir) {
+        if (dir == null || !dir.exists()) return false;
+        java.io.File[] files = dir.listFiles();
+        if (files != null) {
+            for (java.io.File file : files) {
+                if (file.isDirectory()) {
+                    deleteWorldFolder(file);
+                } else {
+                    file.delete();
+                }
+            }
+        }
+        return dir.delete();
+    }
 }

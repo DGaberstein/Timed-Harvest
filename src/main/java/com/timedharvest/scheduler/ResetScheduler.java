@@ -192,4 +192,12 @@ public class ResetScheduler {
     private static class SchedulerState {
         Map<String, Long> lastResetTimes;
     }
+
+    // Utility for AdminDashboardGui to reset a world (manual reset)
+    public static void resetWorld(String worldId, ModConfig.ResourceWorldConfig config) {
+        ResetScheduler scheduler = TimedHarvestMod.getScheduler();
+        if (scheduler != null) {
+            scheduler.manualReset(worldId, config);
+        }
+    }
 }
