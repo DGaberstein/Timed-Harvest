@@ -20,6 +20,7 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.World;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.command.argument.IdentifierArgumentType;
 
 /**
  * Registers and handles all commands for the Timed Harvest mod.
@@ -87,12 +88,36 @@ public class TimedHarvestCommands {
             .then(CommandManager.literal("spawn")
                 .executes(TimedHarvestCommands::teleportToSpawn))
             
-            // /timedharvest create <worldId> <dimensionName> <resetHours>
+            // /timedharvest create <worldId> <dimensionName> <resetHours> [worldType] [seed] [borderSize] [structures]
             .then(CommandManager.literal("create")
                 .then(CommandManager.argument("worldId", StringArgumentType.word())
-                    .then(CommandManager.argument("dimensionName", StringArgumentType.string())
+                    .then(CommandManager.argument("dimensionName", IdentifierArgumentType.identifier())
                         .then(CommandManager.argument("resetHours", StringArgumentType.word())
-                            .executes(TimedHarvestCommands::createWorld)))))
+                            // Basic: /timedharvest create <worldId> <dimensionName> <resetHours>
+                            .executes(TimedHarvestCommands::createWorld)
+                            // With worldType: /timedharvest create <worldId> <dimensionName> <resetHours> <worldType>
+                            .then(CommandManager.argument("worldType", IdentifierArgumentType.identifier())
+                                .suggests((context, builder) -> {
+                                    builder.suggest("minecraft:overworld");
+                                    builder.suggest("minecraft:the_nether");
+                                    builder.suggest("minecraft:the_end");
+                                    return builder.buildFuture();
+                                })
+                                .executes(TimedHarvestCommands::createWorldWithType)
+                                // With seed: /timedharvest create <worldId> <dimensionName> <resetHours> <worldType> <seed>
+                                .then(CommandManager.argument("seed", StringArgumentType.word())
+                                    .executes(TimedHarvestCommands::createWorldWithSeed)
+                                    // With border: /timedharvest create <worldId> <dimensionName> <resetHours> <worldType> <seed> <borderSize>
+                                    .then(CommandManager.argument("borderSize", StringArgumentType.word())
+                                        .executes(TimedHarvestCommands::createWorldWithBorder)
+                                        // Full: /timedharvest create <worldId> <dimensionName> <resetHours> <worldType> <seed> <borderSize> <structures>
+                                        .then(CommandManager.argument("structures", StringArgumentType.word())
+                                            .suggests((context, builder) -> {
+                                                builder.suggest("true");
+                                                builder.suggest("false");
+                                                return builder.buildFuture();
+                                            })
+                                            .executes(TimedHarvestCommands::createWorldFull)))))))))
             
             // /timedharvest enable <worldId>
             .then(CommandManager.literal("enable")
@@ -132,7 +157,9 @@ public class TimedHarvestCommands {
             
             // /timedharvest help
             .then(CommandManager.literal("help")
-                .executes(TimedHarvestCommands::showHelp))
+                .executes(TimedHarvestCommands::showHelp)
+                .then(CommandManager.literal("troubleshooting")
+                    .executes(TimedHarvestCommands::showTroubleshooting)))
         );
     }
 
@@ -144,20 +171,20 @@ public class TimedHarvestCommands {
         
         ModConfig.ResourceWorldConfig worldConfig = findWorldConfig(worldId);
         if (worldConfig == null) {
-            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' not found in configuration!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' not found in configuration!"));
             return 0;
         }
 
         if (!worldConfig.enabled) {
-            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' is disabled!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' is disabled!"));
             return 0;
         }
 
-        context.getSource().sendFeedback(() -> Text.literal("§eResetting resource world: " + worldId + "..."), true);
+        context.getSource().sendFeedback(() -> Text.literal("§e⟳ §6Resetting resource world: §e§l" + worldId + "§6..."), true);
         
         TimedHarvestMod.getScheduler().manualReset(worldId, worldConfig);
         
-        context.getSource().sendFeedback(() -> Text.literal("§aResource world '" + worldId + "' has been reset!"), true);
+        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aResource world '§e§l" + worldId + "§a' has been reset!"), true);
         return 1;
     }
 
@@ -167,9 +194,10 @@ public class TimedHarvestCommands {
     private static int statusAll(CommandContext<ServerCommandSource> context) {
         ModConfig config = TimedHarvestMod.getConfig();
         
-        context.getSource().sendFeedback(() -> Text.literal("§6=== Timed Harvest Status ==="), false);
-        context.getSource().sendFeedback(() -> Text.literal("§eAuto-reset enabled: §f" + config.enableAutoReset), false);
-        context.getSource().sendFeedback(() -> Text.literal("§eConfigured worlds: §f" + config.resourceWorlds.size()), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬▬ §e§lTimed Harvest Status §6§l▬▬▬▬"), false);
+        context.getSource().sendFeedback(() -> Text.literal("§eAuto-reset: " + (config.enableAutoReset ? "§a§lENABLED" : "§c§lDISABLED")), false);
+        context.getSource().sendFeedback(() -> Text.literal("§eConfigured worlds: §f§l" + config.resourceWorlds.size()), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"), false);
         context.getSource().sendFeedback(() -> Text.literal(""), false);
 
         for (ModConfig.ResourceWorldConfig worldConfig : config.resourceWorlds) {
@@ -187,11 +215,11 @@ public class TimedHarvestCommands {
         
         ModConfig.ResourceWorldConfig worldConfig = findWorldConfig(worldId);
         if (worldConfig == null) {
-            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' not found in configuration!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' not found in configuration!"));
             return 0;
         }
 
-        context.getSource().sendFeedback(() -> Text.literal("§6=== Status for '" + worldId + "' ==="), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬ §e§lStatus: §f" + worldId + " §6§l▬▬"), false);
         displayWorldStatus(context, worldConfig);
 
         return 1;
@@ -201,15 +229,18 @@ public class TimedHarvestCommands {
      * Displays status information for a world.
      */
     private static void displayWorldStatus(CommandContext<ServerCommandSource> context, ModConfig.ResourceWorldConfig worldConfig) {
-        context.getSource().sendFeedback(() -> Text.literal("§eWorld ID: §f" + worldConfig.worldId), false);
-        context.getSource().sendFeedback(() -> Text.literal("§eEnabled: §f" + worldConfig.enabled), false);
-        context.getSource().sendFeedback(() -> Text.literal("§eDimension: §f" + worldConfig.dimensionName), false);
-        context.getSource().sendFeedback(() -> Text.literal("§eReset Interval: §f" + worldConfig.resetIntervalHours + " hours"), false);
+        String enabledStatus = worldConfig.enabled ? "§a§lENABLED" : "§c§lDISABLED";
+        
+        context.getSource().sendFeedback(() -> Text.literal("§6● §eWorld ID: §f§l" + worldConfig.worldId), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6● §eStatus: " + enabledStatus), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6● §eDimension: §f" + worldConfig.dimensionName), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6● §eWorld Type: §f" + worldConfig.worldType), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6● §eReset Interval: §f" + worldConfig.resetIntervalHours + " §7hours"), false);
 
         if (worldConfig.enabled && TimedHarvestMod.getConfig().enableAutoReset) {
             long timeRemaining = TimedHarvestMod.getScheduler().getTimeUntilReset(worldConfig.worldId, worldConfig);
             String timeStr = ResetScheduler.formatTime(timeRemaining);
-            context.getSource().sendFeedback(() -> Text.literal("§eNext Reset: §f" + timeStr), false);
+            context.getSource().sendFeedback(() -> Text.literal("§6● §eNext Reset: §a§l" + timeStr), false);
         }
 
         context.getSource().sendFeedback(() -> Text.literal(""), false);
@@ -219,11 +250,11 @@ public class TimedHarvestCommands {
      * Reloads the configuration file.
      */
     private static int reloadConfig(CommandContext<ServerCommandSource> context) {
-        context.getSource().sendFeedback(() -> Text.literal("§eReloading configuration..."), false);
+        context.getSource().sendFeedback(() -> Text.literal("§e⟳ §6Reloading configuration..."), false);
         
         TimedHarvestMod.reloadConfig();
         
-        context.getSource().sendFeedback(() -> Text.literal("§aConfiguration reloaded successfully!"), true);
+        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aConfiguration reloaded successfully!"), true);
         return 1;
     }
 
@@ -233,23 +264,73 @@ public class TimedHarvestCommands {
     private static int showHelp(CommandContext<ServerCommandSource> context) {
         boolean hasPermission = context.getSource().hasPermissionLevel(2);
         
-        context.getSource().sendFeedback(() -> Text.literal("§6=== Timed Harvest Commands ==="), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬▬▬▬▬ §e§lTimed Harvest Commands §6§l▬▬▬▬▬▬▬"), false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
         
         if (hasPermission) {
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest reset <worldId> §f- Manually reset a resource world"), false);
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest status [worldId] §f- Show reset status"), false);
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest reload §f- Reload configuration"), false);
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest tp <worldId> §f- Teleport to resource world"), false);
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest spawn §f- Teleport to overworld spawn"), false);
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest create <worldId> <dimensionName> <hours> §f- Create new world"), false);
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest enable <worldId> §f- Enable a world"), false);
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest disable <worldId> §f- Disable a world"), false);
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest delete <worldId> §f- Delete a world from config"), false);
-            context.getSource().sendFeedback(() -> Text.literal("§e/timedharvest help §f- Show this help message"), false);
+            context.getSource().sendFeedback(() -> Text.literal("§6§l● §eAdmin Commands:"), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest reset §7<worldId> §8- §fManually reset a world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest status §7[worldId] §8- §fShow reset status"), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest reload §8- §fReload configuration"), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest tp §7<worldId> §8- §fTeleport to world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest spawn §8- §fTeleport to overworld"), false);
+            context.getSource().sendFeedback(() -> Text.literal(""), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest create §7<worldId> <dimension> <hours>"), false);
+            context.getSource().sendFeedback(() -> Text.literal("                       §7[type] [seed] [border] [structures]"), false);
+            context.getSource().sendFeedback(() -> Text.literal("    §8→ §fCreate new resource world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("    §7Example: §f/th create §enether §atimed_harvest:nether §624"), false);
+            context.getSource().sendFeedback(() -> Text.literal("              §f          §e....... §aminecraft:the_nether §624"), false);
+            context.getSource().sendFeedback(() -> Text.literal(""), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest enable §7<worldId> §8- §fEnable a world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest disable §7<worldId> §8- §fDisable a world"), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest delete §7<worldId> §8- §fDelete from config"), false);
+            context.getSource().sendFeedback(() -> Text.literal(""), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest help §8- §fShow this help"), false);
+            context.getSource().sendFeedback(() -> Text.literal("  §6/timedharvest help troubleshooting §8- §fCommon fixes"), false);
+            context.getSource().sendFeedback(() -> Text.literal(""), false);
         }
         
         // Always show the player command
-        context.getSource().sendFeedback(() -> Text.literal("§e/th §f- Open world teleporter GUI"), false);
+        context.getSource().sendFeedback(() -> Text.literal("§a§l● §ePlayer Commands:"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §a/th §8- §fOpen world teleporter GUI"), false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"), false);
+        
+        return 1;
+    }
+    
+    /**
+     * Shows common troubleshooting tips and fixes.
+     */
+    private static int showTroubleshooting(CommandContext<ServerCommandSource> context) {
+        context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬ §c§lTimed Harvest Troubleshooting §6§l▬▬▬"), false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
+        
+        context.getSource().sendFeedback(() -> Text.literal("§c§l⚠ §c\"Dimension does not exist\" Error:"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §8→ §fRun: §6§l/timedharvest reset §7<worldId>"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §8→ §7This creates the dimension and datapack"), false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
+        
+        context.getSource().sendFeedback(() -> Text.literal("§e§l💡 §eCorrect Dimension Naming:"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §c✗ Wrong: §7minecraft:nether §8(doesn't exist!)"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §a✓ Right: §f§lminecraft:the_nether §8(vanilla nether)"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §a✓ Right: §f§ltimed_harvest:nether §8(custom nether)"), false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
+        
+        context.getSource().sendFeedback(() -> Text.literal("§e§l⚙ §eAfter Config Changes:"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §a1. §fRun: §6§l/timedharvest reload"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §a2. §fRun: §6§l/timedharvest reset §7<worldId> §ffor each changed world"), false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
+        
+        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aAuto-Fix Features:"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §8• §7Missing namespace in dimension names"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §8• §7Missing worldType defaults to overworld"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §8• §7Check logs for auto-fix messages"), false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
+        
+        context.getSource().sendFeedback(() -> Text.literal("§b§l📖 §bFull Guide: §f/TROUBLESHOOTING.md"), false);
+        context.getSource().sendFeedback(() -> Text.literal("§8Tip: Check server logs for detailed error messages"), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"), false);
         
         return 1;
     }
@@ -262,13 +343,13 @@ public class TimedHarvestCommands {
         
         ModConfig.ResourceWorldConfig worldConfig = findWorldConfig(worldId);
         if (worldConfig == null) {
-            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' not found in configuration!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' not found in configuration!"));
             return 0;
         }
 
         ServerPlayerEntity player = context.getSource().getPlayer();
         if (player == null) {
-            context.getSource().sendError(Text.literal("§cThis command can only be used by players!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cThis command can only be used by players!"));
             return 0;
         }
 
@@ -278,7 +359,8 @@ public class TimedHarvestCommands {
         
         ServerWorld targetWorld = context.getSource().getServer().getWorld(dimensionKey);
         if (targetWorld == null) {
-            context.getSource().sendError(Text.literal("§cDimension '" + worldConfig.dimensionName + "' does not exist! Use /timedharvest reset " + worldId + " to create it."));
+            context.getSource().sendError(Text.literal("§c§l✖ §cDimension '§e" + worldConfig.dimensionName + "§c' does not exist!"));
+            context.getSource().sendError(Text.literal("§eUse §6§l/timedharvest reset " + worldId + " §eto create it."));
             return 0;
         }
 
@@ -293,7 +375,7 @@ public class TimedHarvestCommands {
         BlockPos spawnPos = targetWorld.getSpawnPos();
         player.teleport(targetWorld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
         
-        context.getSource().sendFeedback(() -> Text.literal("§aTeleported to " + worldId + "!"), false);
+        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aTeleported to §e§l" + worldId + "§a!"), false);
         return 1;
     }
 
@@ -303,7 +385,7 @@ public class TimedHarvestCommands {
     private static int teleportToSpawn(CommandContext<ServerCommandSource> context) {
         ServerPlayerEntity player = context.getSource().getPlayer();
         if (player == null) {
-            context.getSource().sendError(Text.literal("§cThis command can only be used by players!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cThis command can only be used by players!"));
             return 0;
         }
 
@@ -312,21 +394,147 @@ public class TimedHarvestCommands {
         
         player.teleport(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
         
-        context.getSource().sendFeedback(() -> Text.literal("§aTeleported to spawn!"), false);
+        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aTeleported to §e§lspawn§a!"), false);
         return 1;
     }
 
     /**
      * Creates a new resource world in the configuration.
      */
+    /**
+     * Creates a new world with default settings.
+     */
     private static int createWorld(CommandContext<ServerCommandSource> context) {
+        return createWorldInternal(context, "minecraft:overworld", 0, 0, true);
+    }
+    
+    /**
+     * Creates a new world with specified world type.
+     */
+    private static int createWorldWithType(CommandContext<ServerCommandSource> context) {
+        Identifier worldTypeId = IdentifierArgumentType.getIdentifier(context, "worldType");
+        String worldType = worldTypeId.toString();
+        return createWorldInternal(context, worldType, 0, 0, true);
+    }
+    
+    /**
+     * Creates a new world with specified world type and seed.
+     */
+    private static int createWorldWithSeed(CommandContext<ServerCommandSource> context) {
+        Identifier worldTypeId = IdentifierArgumentType.getIdentifier(context, "worldType");
+        String worldType = worldTypeId.toString();
+        String seedStr = StringArgumentType.getString(context, "seed");
+        
+        long seed;
+        try {
+            seed = Long.parseLong(seedStr);
+        } catch (NumberFormatException e) {
+            context.getSource().sendError(Text.literal("§cInvalid seed format! Use a number or 0 for random."));
+            return 0;
+        }
+        
+        return createWorldInternal(context, worldType, seed, 0, true);
+    }
+    
+    /**
+     * Creates a new world with specified world type, seed, and border size.
+     */
+    private static int createWorldWithBorder(CommandContext<ServerCommandSource> context) {
+        Identifier worldTypeId = IdentifierArgumentType.getIdentifier(context, "worldType");
+        String worldType = worldTypeId.toString();
+        String seedStr = StringArgumentType.getString(context, "seed");
+        String borderStr = StringArgumentType.getString(context, "borderSize");
+        
+        long seed;
+        try {
+            seed = Long.parseLong(seedStr);
+        } catch (NumberFormatException e) {
+            context.getSource().sendError(Text.literal("§cInvalid seed format! Use a number or 0 for random."));
+            return 0;
+        }
+        
+        int borderSize;
+        try {
+            borderSize = Integer.parseInt(borderStr);
+            if (borderSize < 0) {
+                context.getSource().sendError(Text.literal("§cBorder size must be 0 or positive!"));
+                return 0;
+            }
+        } catch (NumberFormatException e) {
+            context.getSource().sendError(Text.literal("§cInvalid border size format!"));
+            return 0;
+        }
+        
+        return createWorldInternal(context, worldType, seed, borderSize, true);
+    }
+    
+    /**
+     * Creates a new world with all options specified.
+     */
+    private static int createWorldFull(CommandContext<ServerCommandSource> context) {
+        Identifier worldTypeId = IdentifierArgumentType.getIdentifier(context, "worldType");
+        String worldType = worldTypeId.toString();
+        String seedStr = StringArgumentType.getString(context, "seed");
+        String borderStr = StringArgumentType.getString(context, "borderSize");
+        String structuresStr = StringArgumentType.getString(context, "structures");
+        
+        long seed;
+        try {
+            seed = Long.parseLong(seedStr);
+        } catch (NumberFormatException e) {
+            context.getSource().sendError(Text.literal("§cInvalid seed format! Use a number or 0 for random."));
+            return 0;
+        }
+        
+        int borderSize;
+        try {
+            borderSize = Integer.parseInt(borderStr);
+            if (borderSize < 0) {
+                context.getSource().sendError(Text.literal("§cBorder size must be 0 or positive!"));
+                return 0;
+            }
+        } catch (NumberFormatException e) {
+            context.getSource().sendError(Text.literal("§cInvalid border size format!"));
+            return 0;
+        }
+        
+        boolean generateStructures = Boolean.parseBoolean(structuresStr);
+        
+        return createWorldInternal(context, worldType, seed, borderSize, generateStructures);
+    }
+    
+    /**
+     * Internal method to create a world with all options.
+     */
+    private static int createWorldInternal(CommandContext<ServerCommandSource> context, 
+                                          String worldType, long seed, int borderSize, boolean generateStructures) {
         String worldId = StringArgumentType.getString(context, "worldId");
-        String dimensionName = StringArgumentType.getString(context, "dimensionName");
+        Identifier dimensionNameId = IdentifierArgumentType.getIdentifier(context, "dimensionName");
+        String dimensionName = dimensionNameId.toString();
         String hoursStr = StringArgumentType.getString(context, "resetHours");
 
         // Check if world already exists
         if (findWorldConfig(worldId) != null) {
             context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' already exists!"));
+            return 0;
+        }
+
+        // Validate dimension naming - prevent conflicts with vanilla dimension IDs
+        if (dimensionName.equals("minecraft:nether") || dimensionName.equals("minecraft:end") || dimensionName.equals("minecraft:overworld")) {
+            context.getSource().sendError(Text.literal("§c§l✖ §cInvalid dimension name: §e" + dimensionName));
+            context.getSource().sendError(Text.literal(""));
+            context.getSource().sendError(Text.literal("§e§l⚠ §6These dimension IDs don't exist in vanilla:"));
+            context.getSource().sendError(Text.literal("  §c✗ §7minecraft:nether"));
+            context.getSource().sendError(Text.literal("  §c✗ §7minecraft:end"));
+            context.getSource().sendError(Text.literal("  §c✗ §7minecraft:overworld"));
+            context.getSource().sendError(Text.literal(""));
+            context.getSource().sendError(Text.literal("§e§l💡 §6Use these instead:"));
+            context.getSource().sendError(Text.literal("  §a✓ §f§lminecraft:the_nether §7(vanilla nether)"));
+            context.getSource().sendError(Text.literal("  §a✓ §f§lminecraft:the_end §7(vanilla end)"));
+            context.getSource().sendError(Text.literal("  §a✓ §f§lminecraft:overworld §7(vanilla overworld) - Already exists!"));
+            context.getSource().sendError(Text.literal("  §a✓ §f§ltimed_harvest:nether §7(custom nether)"));
+            context.getSource().sendError(Text.literal("  §a✓ §f§ltimed_harvest:end §7(custom end)"));
+            context.getSource().sendError(Text.literal("  §a✓ §f§ltimed_harvest:mining §7(custom world)"));
             return 0;
         }
 
@@ -348,6 +556,10 @@ public class TimedHarvestCommands {
         newWorld.worldId = worldId;
         newWorld.dimensionName = dimensionName;
         newWorld.resetIntervalHours = resetHours;
+        newWorld.worldType = worldType;
+        newWorld.seed = seed;
+        newWorld.worldBorderSize = borderSize;
+        newWorld.generateStructures = generateStructures;
         newWorld.enabled = true;
 
         // Add to config
@@ -372,18 +584,33 @@ public class TimedHarvestCommands {
             context.getSource().sendError(Text.literal("§cFailed to generate datapack: " + e.getMessage()));
         }
         
+        // Save config again to persist the generated seed
+        TimedHarvestMod.getConfig().save();
+        
         // Reload to apply changes
         TimedHarvestMod.reloadConfig();
 
-        context.getSource().sendFeedback(() -> Text.literal("§aCreated new resource world '" + worldId + "'!"), true);
-        context.getSource().sendFeedback(() -> Text.literal("§eDimension: §f" + dimensionName), false);
-        context.getSource().sendFeedback(() -> Text.literal("§eReset Interval: §f" + resetHours + " hours"), false);
-        context.getSource().sendFeedback(() -> Text.literal(""), false);
-        context.getSource().sendFeedback(() -> Text.literal("§eNext steps:"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e1. Close and restart Minecraft"), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e2. Run §f/timedharvest reset " + worldId), false);
-        context.getSource().sendFeedback(() -> Text.literal("§e3. Run §f/timedharvest tp " + worldId), false);
+        // Get the final seed (may have been generated randomly)
+        final long finalSeed = newWorld.seed;
         
+        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ Successfully Created Resource World!"), true);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"), false);
+        context.getSource().sendFeedback(() -> Text.literal("§e§lWorld Settings:"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §6● §eWorld ID: §f" + worldId), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §6● §eDimension: §f" + dimensionName), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §6● §eWorld Type: §f" + worldType), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §6● §eSeed: §a§l" + finalSeed + (seed == 0 ? " §7(randomly generated)" : "")), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §6● §eWorld Border: §f" + (borderSize == 0 ? "§7None (Infinite)" : borderSize + " blocks")), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §6● §eStructures: " + (generateStructures ? "§a§lENABLED" : "§c§lDISABLED")), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §6● §eReset Interval: §f" + resetHours + " hours"), false);
+        context.getSource().sendFeedback(() -> Text.literal(""), false);
+        context.getSource().sendFeedback(() -> Text.literal("§e§lNext Steps:"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §a1. §f§lRestart §fthe server/game"), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §a2. §fRun: §6§l/timedharvest reset " + worldId), false);
+        context.getSource().sendFeedback(() -> Text.literal("  §a3. §fAccess via §6§l/th §fgui or §6§l/timedharvest tp " + worldId), false);
+        context.getSource().sendFeedback(() -> Text.literal("§6§l▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"), false);
+
         return 1;
     }
 
@@ -395,12 +622,12 @@ public class TimedHarvestCommands {
         
         ModConfig.ResourceWorldConfig worldConfig = findWorldConfig(worldId);
         if (worldConfig == null) {
-            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' not found in configuration!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' not found in configuration!"));
             return 0;
         }
 
         if (worldConfig.enabled) {
-            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' is already enabled!"));
+            context.getSource().sendError(Text.literal("§e§l⚠ §eWorld '§6" + worldId + "§e' is already enabled!"));
             return 0;
         }
 
@@ -408,7 +635,7 @@ public class TimedHarvestCommands {
         TimedHarvestMod.getConfig().save();
         TimedHarvestMod.reloadConfig();
 
-        context.getSource().sendFeedback(() -> Text.literal("§aEnabled world '" + worldId + "'!"), true);
+        context.getSource().sendFeedback(() -> Text.literal("§a§l✓ §aEnabled world '§e§l" + worldId + "§a'!"), true);
         return 1;
     }
 
@@ -420,12 +647,12 @@ public class TimedHarvestCommands {
         
         ModConfig.ResourceWorldConfig worldConfig = findWorldConfig(worldId);
         if (worldConfig == null) {
-            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' not found in configuration!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' not found in configuration!"));
             return 0;
         }
 
         if (!worldConfig.enabled) {
-            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' is already disabled!"));
+            context.getSource().sendError(Text.literal("§e§l⚠ §eWorld '§6" + worldId + "§e' is already disabled!"));
             return 0;
         }
 
@@ -433,7 +660,7 @@ public class TimedHarvestCommands {
         TimedHarvestMod.getConfig().save();
         TimedHarvestMod.reloadConfig();
 
-        context.getSource().sendFeedback(() -> Text.literal("§aDisabled world '" + worldId + "'!"), true);
+        context.getSource().sendFeedback(() -> Text.literal("§c§l✓ §cDisabled world '§e§l" + worldId + "§c'!"), true);
         return 1;
     }
 
@@ -445,7 +672,7 @@ public class TimedHarvestCommands {
         
         ModConfig.ResourceWorldConfig worldConfig = findWorldConfig(worldId);
         if (worldConfig == null) {
-            context.getSource().sendError(Text.literal("§cWorld '" + worldId + "' not found in configuration!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cWorld '§e" + worldId + "§c' not found in configuration!"));
             return 0;
         }
 
@@ -459,7 +686,7 @@ public class TimedHarvestCommands {
                 ServerWorld overworld = context.getSource().getServer().getOverworld();
                 BlockPos spawnPos = overworld.getSpawnPos();
                 player.teleport(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
-                player.sendMessage(Text.literal("§6[Timed Harvest] §eYou were teleported to spawn because world '" + worldId + "' is being deleted."));
+                player.sendMessage(Text.literal("§6§l[Timed Harvest] §eYou were teleported to spawn because world '§6§l" + worldId + "§e' is being deleted."));
             }
         }
 
@@ -469,8 +696,8 @@ public class TimedHarvestCommands {
         TimedHarvestMod.reloadConfig();
 
         // Delete world files (will happen on next server restart or manual reset)
-        context.getSource().sendFeedback(() -> Text.literal("§aWorld '" + worldId + "' has been deleted from configuration!"), true);
-        context.getSource().sendFeedback(() -> Text.literal("§eWorld files will be removed on next server restart."), true);
+        context.getSource().sendFeedback(() -> Text.literal("§c§l✗ §cWorld '§e§l" + worldId + "§c' has been deleted from configuration!"), true);
+        context.getSource().sendFeedback(() -> Text.literal("§7World files will be removed on next server restart."), true);
         
         return 1;
     }
@@ -492,7 +719,12 @@ public class TimedHarvestCommands {
      */
     private static void registerPlayerCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(CommandManager.literal("th")
-            .executes(TimedHarvestCommands::openWorldGui));
+            .executes(TimedHarvestCommands::openWorldGui)
+            
+            // /th admin - Open admin dashboard (requires permission)
+            .then(CommandManager.literal("admin")
+                .requires(source -> source.hasPermissionLevel(2))
+                .executes(TimedHarvestCommands::openAdminDashboard)));
     }
 
     /**
@@ -503,12 +735,12 @@ public class TimedHarvestCommands {
         try {
             player = context.getSource().getPlayer();
         } catch (Exception e) {
-            context.getSource().sendError(Text.literal("§cThis command can only be used by players!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cThis command can only be used by players!"));
             return 0;
         }
         
         if (player == null) {
-            context.getSource().sendError(Text.literal("§cThis command can only be used by players!"));
+            context.getSource().sendError(Text.literal("§c§l✖ §cThis command can only be used by players!"));
             return 0;
         }
 
@@ -517,11 +749,49 @@ public class TimedHarvestCommands {
             SimpleInventory inventory = new SimpleInventory(27);
             player.openHandledScreen(new SimpleNamedScreenHandlerFactory(
                 (syncId, playerInventory, playerEntity) -> new WorldSelectionGui(syncId, playerInventory, inventory, player),
-                Text.literal("§6Resource Worlds")
+                Text.literal("§6§lResource Worlds")
             ));
         } catch (Exception e) {
             TimedHarvestMod.LOGGER.error("Error opening world GUI", e);
-            context.getSource().sendError(Text.literal("§cError opening GUI: " + e.getMessage()));
+            context.getSource().sendError(Text.literal("§c§l✖ §cError opening GUI: " + e.getMessage()));
+            return 0;
+        }
+
+        return 1;
+    }
+
+    /**
+     * Opens the admin dashboard GUI for operators.
+     */
+    private static int openAdminDashboard(CommandContext<ServerCommandSource> context) {
+        ServerPlayerEntity player;
+        try {
+            player = context.getSource().getPlayer();
+        } catch (Exception e) {
+            context.getSource().sendError(Text.literal("§c§l✖ §cThis command can only be used by players!"));
+            return 0;
+        }
+        
+        if (player == null) {
+            context.getSource().sendError(Text.literal("§c§l✖ §cThis command can only be used by players!"));
+            return 0;
+        }
+
+        if (!player.hasPermissionLevel(2)) {
+            player.sendMessage(Text.literal("§c§l✖ §cYou don't have permission to access the admin dashboard!"));
+            return 0;
+        }
+
+        try {
+            // Open the admin dashboard GUI
+            SimpleInventory inventory = new SimpleInventory(54);
+            player.openHandledScreen(new SimpleNamedScreenHandlerFactory(
+                (syncId, playerInventory, playerEntity) -> new com.timedharvest.gui.AdminDashboardGui(syncId, playerInventory, inventory, player),
+                Text.literal("§6§lAdmin Dashboard")
+            ));
+        } catch (Exception e) {
+            TimedHarvestMod.LOGGER.error("Error opening admin dashboard", e);
+            context.getSource().sendError(Text.literal("§c§l✖ §cError opening admin dashboard: " + e.getMessage()));
             return 0;
         }
 

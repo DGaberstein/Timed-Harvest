@@ -5,16 +5,21 @@ A Minecraft Fabric mod that creates automatically resetting resource worlds with
 ## 🎯 Features
 
 - ✅ **Automatic World Resets** - Schedule resource worlds to reset at configurable intervals
-- ✅ **Player-Friendly GUI** - Simple `/th` command opens a visual world selector
-- ✅ **Custom Seeds** - Set specific seeds or auto-generate unique worlds
+- ✅ **Player-Friendly GUI** - Simple `/th` command opens a professional world selector with title bar
+- ✅ **Admin Dashboard GUI** - Visual management interface for operators (`/th admin`)
+- ✅ **Custom Seeds** - Set specific seeds or auto-generate truly random worlds
 - ✅ **World Borders** - Configure world size limits for better performance
-- ✅ **Pagination** - Handle unlimited worlds with page navigation
+- ✅ **Pagination** - Handle unlimited worlds with arrow-based navigation
 - ✅ **Player Management** - Safely kicks players from worlds before reset
 - ✅ **Countdown Warnings** - Configurable warnings before resets occur
-- ✅ **Tab Completion** - All admin commands support tab completion
+- ✅ **Tab Completion** - All admin commands support intelligent tab completion
 - ✅ **Persistent State** - Survives server restarts with saved reset schedules
-- ✅ **JSON Configuration** - Easy-to-edit configuration files
-- ✅ **Multiple Worlds** - Support for multiple resource worlds with independent schedules
+- ✅ **JSON Configuration** - Easy-to-edit configuration files with auto-validation
+- ✅ **Multiple Worlds** - Support for unlimited resource worlds with independent schedules
+- ✅ **Permission-Based UI** - Admin features only visible to operators
+- ✅ **Professional Styling** - Consistent gold/yellow theme across all interfaces
+- ✅ **Enhanced Create Command** - Full customization with worldType, seed, border, and structures
+- ✅ **Dimension Validation** - Prevents invalid dimension names with helpful error messages
 
 ## 📦 Installation
 
@@ -72,16 +77,41 @@ The mod generates a configuration file at `config/timed-harvest.json`:
 ### Player Commands (No Permissions Required)
 
 #### `/th`
-Opens a visual GUI to teleport to resource worlds. Features:
-- Click world icons to teleport instantly
-- View world info (type, reset time, border size)
-- "Return to Spawn" button
-- Navigation buttons for multiple pages (9 worlds per page)
-- World buttons centered in middle row for easy access
+Opens a professional visual GUI to teleport to resource worlds. Features:
+- **Title Bar**: Yellow glass pane header with "Resource Worlds" label
+- **World Icons**: Click grass blocks, netherrack, or end stone to teleport instantly
+- **World Info**: Hover to see world type, reset time, border size, and structures
+- **Return to Spawn**: Red bed button to teleport to overworld spawn
+- **Navigation**: Arrow buttons for previous/next pages with page indicator
+- **Admin Access**: Nether star button (operators only) to open Admin Dashboard
+- **Centered Layout**: Worlds displayed in middle row for easy access
+- **Permission-Aware**: Admin features only visible to operators
 
 **Example:**
 ```
 /th
+```
+
+#### `/th admin`
+Opens the **Admin Dashboard GUI** for operators. Features:
+- **Visual World Management**: See all worlds with status indicators (🟢 enabled / 🔴 disabled)
+- **World Details**: View dimension, type, reset interval, seed, border, and next reset time
+- **Quick Actions**: 
+  - Left-click world → Show management commands
+  - Right-click world → Toggle enabled/disabled instantly
+- **Action Buttons**:
+  - 📖 Reload Config
+  - 💎 Create World (shows command syntax)
+  - 📘 Help & Commands
+  - ➡️ Page Navigation
+- **Professional Layout**: 6-row interface with title bar and organized sections
+- **Real-Time Updates**: GUI refreshes when toggling world status
+
+**Requires**: Operator permission (level 2)
+
+**Example:**
+```
+/th admin
 ```
 
 ### Admin Commands (Requires OP Level 2)
@@ -119,13 +149,50 @@ Teleport back to the overworld spawn.
 /timedharvest spawn
 ```
 
-#### `/timedharvest create <worldId> <dimensionName> <resetHours>`
-Create a new resource world configuration.
+#### `/timedharvest create <worldId> <dimensionName> <resetHours> [worldType] [seed] [borderSize] [structures]`
+Create a new resource world with full customization options.
 
-**Example:**
+**Parameters:**
+- `worldId` - Unique identifier (e.g., `nether`, `mining`)
+- `dimensionName` - Dimension ID with namespace (e.g., `timed_harvest:nether`, `minecraft:the_nether`)
+- `resetHours` - Hours between resets (e.g., `24`, `168`)
+- `worldType` (optional) - World generation type: `minecraft:overworld`, `minecraft:the_nether`, `minecraft:the_end`
+- `seed` (optional) - Custom seed (0 = random, default: 0)
+- `borderSize` (optional) - Border diameter in blocks (0 = infinite, default: 0)
+- `structures` (optional) - Generate structures: `true` or `false` (default: true)
+
+**Dimension Naming Important:**
+- ❌ **Wrong**: `minecraft:nether` (doesn't exist!)
+- ✅ **Right**: `minecraft:the_nether` (vanilla nether)
+- ✅ **Right**: `timed_harvest:nether` (custom nether world)
+
+**Examples:**
+```bash
+# Basic: Custom nether world, 24-hour reset
+/timedharvest create nether timed_harvest:nether 24
+
+# With world type: Use nether biomes
+/timedharvest create nether timed_harvest:nether 24 minecraft:the_nether
+
+# With seed: Specific terrain
+/timedharvest create mining timed_harvest:mining 12 minecraft:overworld 123456
+
+# With border: Limited 5000-block world
+/timedharvest create end timed_harvest:end 48 minecraft:the_end 0 5000
+
+# Full options: Everything customized
+/timedharvest create resource timed_harvest:resource 168 minecraft:overworld 424242 10000 true
 ```
-/timedharvest create end_world timed_harvest:end 168
-```
+
+**After Creating:**
+1. Restart the server/game (dimensions load on startup only)
+2. Run `/timedharvest reset <worldId>` to generate the world
+3. Access via `/th` GUI or `/timedharvest tp <worldId>`
+
+**Tab Completion:**
+- Automatically suggests valid dimension names
+- Suggests valid world types
+- Suggests boolean values for structures
 
 #### `/timedharvest enable <worldId>`
 Enable a disabled world.
@@ -167,13 +234,38 @@ Displays command help information (shows different commands based on permission 
 /timedharvest help
 ```
 
+#### `/timedharvest help troubleshooting`
+Shows common troubleshooting tips and fixes, including:
+- How to fix "Dimension does not exist" errors
+- Correct dimension naming guide
+- Steps after config changes
+- Auto-fix features explanation
+
+**Example:**
+```
+/timedharvest help troubleshooting
+```
+
 ## 🌍 World Customization
 
 ### Custom Seeds
 
 Control world generation with seeds:
-- **`seed: 0`** - Automatically generates a unique seed based on worldId (different worlds = different terrain)
+- **`seed: 0`** - Automatically generates a truly random seed using `new Random().nextLong()` (saved to config for reproducibility)
 - **`seed: 12345`** - Uses specific seed for reproducible world generation
+- **Auto-saved**: Generated random seeds are automatically saved to config for world regeneration
+
+### World Types
+
+Choose the correct world type for proper biome generation:
+- **`minecraft:overworld`** - Normal overworld biomes (plains, forests, mountains, etc.)
+- **`minecraft:the_nether`** - Nether biomes (nether wastes, crimson forest, warped forest, etc.)
+- **`minecraft:the_end`** - End biomes (end highlands, end midlands, end barrens, etc.)
+
+**Important**: World type affects biome generation:
+- Nether worlds need `minecraft:the_nether` to generate nether biomes
+- End worlds need `minecraft:the_end` to generate end terrain
+- Using wrong type will generate overworld biomes in all dimensions
 
 ### World Borders
 
@@ -190,9 +282,12 @@ Borders are applied automatically when players teleport to worlds.
 
 1. **World Management Module** - Handles dimension creation via datapacks, deletion, and file management
 2. **Scheduler Module** - Tick-based timer system that tracks reset intervals
-3. **GUI System** - Visual world selector with pagination support
-4. **Configuration System** - JSON-based config with hot-reload support
-5. **Command Interface** - Brigadier commands with tab completion
+3. **GUI System** - Professional ScreenHandler-based interfaces with permission-aware features:
+   - **World Selector GUI** - Player teleportation interface with title bar and navigation
+   - **Admin Dashboard GUI** - Visual world management with left/right click actions
+4. **Configuration System** - JSON-based config with hot-reload and auto-validation
+5. **Command Interface** - Brigadier commands with intelligent tab completion and dimension validation
+6. **Biome Generation** - Proper biome source configuration for overworld, nether, and end dimensions
 
 ### Reset Process Flow
 
@@ -232,14 +327,14 @@ Server Tick → Check Scheduler → Time Reached?
 }
 ```
 
-### Daily Resource Dimension (Specific Seed)
+### Daily Nether Resources (Custom Seed)
 ```json
 {
-  "worldId": "daily_resources",
-  "dimensionName": "timed_harvest:daily",
+  "worldId": "nether_resources",
+  "dimensionName": "timed_harvest:nether",
   "resetIntervalHours": 24,
-  "worldType": "minecraft:overworld",
-  "seed": 424242,
+  "worldType": "minecraft:the_nether",
+  "seed": 123456789,
   "generateStructures": true,
   "worldBorderSize": 3000,
   "enabled": true
@@ -253,7 +348,7 @@ Server Tick → Check Scheduler → Time Reached?
   "dimensionName": "timed_harvest:end",
   "resetIntervalHours": 720,
   "worldType": "minecraft:the_end",
-  "seed": 0,
+  "seed": -987654321,
   "generateStructures": true,
   "worldBorderSize": 0,
   "enabled": true
@@ -281,29 +376,51 @@ cd Timed-Harvest
 src/main/java/com/timedharvest/
 ├── TimedHarvestMod.java          # Main entry point
 ├── command/
-│   └── TimedHarvestCommands.java # Command handlers with tab completion
+│   └── TimedHarvestCommands.java # Command handlers with tab completion & validation
 ├── config/
-│   └── ModConfig.java            # Configuration management
+│   └── ModConfig.java            # Configuration management with auto-validation
 ├── gui/
-│   └── WorldSelectionGui.java    # Visual world selector GUI
+│   ├── WorldSelectionGui.java    # Player world selector (permission-aware)
+│   └── AdminDashboardGui.java    # Admin management interface (NEW!)
 ├── scheduler/
 │   └── ResetScheduler.java       # Tick-based scheduling
 └── world/
     ├── ResourceWorldManager.java # World lifecycle management
-    └── DatapackGenerator.java    # Dynamic datapack creation
+    └── DatapackGenerator.java    # Dynamic datapack creation with biome sources
 ```
 
 ### Key Features Implementation
 
-- **Datapack System**: Dynamically generates dimension datapacks for custom worlds
-- **GUI System**: ScreenHandler-based inventory GUI with pagination
+- **Datapack System**: Dynamically generates dimension datapacks with proper biome sources
+- **GUI System**: Dual-interface design - player selector + admin dashboard
+- **Permission System**: Permission-based UI visibility (admin features only for operators)
 - **Auto-reload**: Automatically reloads datapacks on server start
-- **Seed Generation**: Unique seeds using worldId.hashCode() for consistent uniqueness
+- **Seed Generation**: Truly random seeds using `new Random().nextLong()` with auto-save
 - **World Borders**: Applied on-the-fly when players access worlds
+- **Dimension Validation**: Prevents creation of invalid dimension names with helpful errors
+- **Biome Generation**: Correct biome sources for overworld (multi_noise), nether (multi_noise + preset), and end (the_end type)
 
 ## 📜 License
 
 MIT License - See LICENSE file for details
+
+## 📚 Documentation
+
+### Feature Documentation
+- **[ADMIN_DASHBOARD.md](ADMIN_DASHBOARD.md)** - Complete Admin Dashboard GUI guide
+- **[DIMENSION_NAMING.md](DIMENSION_NAMING.md)** - Dimension naming conventions and validation
+
+### User Guides
+- **[CREATE_COMMAND_GUIDE.md](CREATE_COMMAND_GUIDE.md)** - Complete guide to creating worlds with all options
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
+- **[COMMANDS.md](COMMANDS.md)** - Full command reference
+- **[WORLD_CUSTOMIZATION.md](WORLD_CUSTOMIZATION.md)** - World customization guide
+
+### Technical Documentation
+- **[ADMIN_DASHBOARD_SUMMARY.md](ADMIN_DASHBOARD_SUMMARY.md)** - Implementation overview
+- **[ADMIN_DASHBOARD_VISUAL.md](ADMIN_DASHBOARD_VISUAL.md)** - ASCII art visual reference
+- **[WORLD_SELECTOR_UPDATE.md](WORLD_SELECTOR_UPDATE.md)** - World Selection GUI styling update
+- **[DIMENSION_NAMING_FIX.md](DIMENSION_NAMING_FIX.md)** - Dimension validation fix summary
 
 ## 🤝 Contributing
 
@@ -326,26 +443,59 @@ Built with ❤️ using [Fabric](https://fabricmc.net/)
 
 ## 🎨 GUI Preview
 
-The `/th` command opens a clean, centered GUI:
+### World Selection GUI (`/th`)
+
+The `/th` command opens a professional GUI with title bar and navigation:
 
 ```
-┌─────────────────────────────────┐
-│     Resource Worlds             │
-├─────────────────────────────────┤
-│    [Empty Top Row]              │
-│                                 │
-│   🟩 Mining  🔴 Nether  ⬜ End  │ ← Worlds (centered)
-│                                 │
-│ 🛏️ Spawn  ◀ Prev  Next ▶  📦   │ ← Actions
-└─────────────────────────────────┘
+┌───────────────────────────────────────────┐
+│ 🟨🟨🟨 Resource Worlds 🟨🟨🟨              │ ← Title Bar (Yellow Glass)
+├───────────────────────────────────────────┤
+│                                           │
+│   🟩 Mining  🔴 Nether  ⬜ End            │ ← Worlds (Row 1)
+│                                           │
+│ 🛏️ Spawn  ◀ Prev  📄 1/2  Next ▶  ⭐     │ ← Actions (Row 2)
+└───────────────────────────────────────────┘
 ```
 
 **Features:**
+- Professional title bar with yellow glass panes
 - World icons change based on world type
 - Hover to see reset time and border size
 - Click to teleport instantly
-- Pagination for 10+ worlds
-- No permissions required
+- Arrow-based pagination for 10+ worlds
+- Page indicator shows current/total pages
+- ⭐ Admin button (only visible to operators)
+
+### Admin Dashboard GUI (`/th admin`)
+
+Operators see a powerful 6-row management interface:
+
+```
+┌───────────────────────────────────────────┐
+│ 🟨🟨🟨 Admin Dashboard 🟨🟨🟨               │ ← Title Bar
+├───────────────────────────────────────────┤
+│                                           │
+│   🟩 Mining World        ⏱️ 60 min       │ ← World 1
+│   Left-click: Commands  Right-click: OFF  │
+│                                           │
+│   🔴 Nether Resources    ⏱️ 120 min      │ ← World 2
+│   Left-click: Commands  Right-click: ON   │
+│                                           │
+│   [More worlds...]                        │
+│                                           │
+├───────────────────────────────────────────┤
+│ 🔄 Reload  ➕ Create  ❓ Help  ◀ ▶  ❌    │ ← Quick Actions
+└───────────────────────────────────────────┘
+```
+
+**Features:**
+- Left-click worlds to see commands
+- Right-click worlds to toggle enabled/disabled
+- Real-time updates when toggling
+- Quick action buttons for common tasks
+- Pagination for unlimited worlds
+- Permission-based access (operators only)
 
 ---
 

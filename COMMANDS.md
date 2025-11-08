@@ -31,16 +31,38 @@ Reloads the configuration file without restarting the server.
 
 ### Create New World
 ```
-/timedharvest create <worldId> <dimensionName> <resetHours>
+/timedharvest create <worldId> <dimensionName> <resetHours> [worldType] [seed] [borderSize] [structures]
 ```
-Creates a new resource world in the configuration.
+Creates a new resource world with customizable options.
+
+**Required Parameters:**
+- `worldId` - Unique identifier for the world
+- `dimensionName` - Namespaced dimension name (e.g., `timed_harvest:mining`)
+- `resetHours` - Reset interval in hours (can be decimal)
+
+**Optional Parameters:**
+- `worldType` - World dimension type (default: `minecraft:overworld`)
+  - Options: `minecraft:overworld`, `minecraft:the_nether`, `minecraft:the_end`
+- `seed` - World generation seed (default: 0 for random)
+- `borderSize` - World border diameter in blocks (default: 0 for no border)
+- `structures` - Enable structures (default: true)
 
 **Examples:**
-- `/timedharvest create mining_world timed_harvest:mining 168` - Creates a world that resets weekly
-- `/timedharvest create farming_world timed_harvest:farming 24` - Creates a world that resets daily
-- `/timedharvest create end_world timed_harvest:end 336` - Creates a world that resets every 2 weeks
+- `/timedharvest create mining timed_harvest:mining 168`
+  - Weekly mining world with defaults
+  
+- `/timedharvest create nether timed_harvest:nether 72 minecraft:the_nether`
+  - Nether world that resets every 3 days
+  
+- `/timedharvest create pvp timed_harvest:pvp 24 minecraft:overworld 12345 5000`
+  - Daily PvP world with specific seed and 5km border
+  
+- `/timedharvest create speedrun timed_harvest:speedrun 1 minecraft:overworld 999 10000 false`
+  - Hourly speedrun world with no structures
 
-**Note:** After creating a world, use `/timedharvest reset <worldId>` to generate it.
+**Note:** After creating a world, **restart the server/game** then use `/timedharvest reset <worldId>` to generate it.
+
+📖 **See [CREATE_COMMAND_GUIDE.md](CREATE_COMMAND_GUIDE.md) for detailed examples and use cases.**
 
 ### Enable/Disable World
 ```

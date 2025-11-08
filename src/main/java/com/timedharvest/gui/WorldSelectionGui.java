@@ -34,6 +34,7 @@ import java.util.List;
 public class WorldSelectionGui extends ScreenHandler {
     private final Inventory inventory;
     private final List<ModConfig.ResourceWorldConfig> enabledWorlds;
+    private final ServerPlayerEntity player;
     private int currentPage = 0;
     private static final int WORLDS_PER_PAGE = 9; // One row of worlds
 
@@ -44,6 +45,7 @@ public class WorldSelectionGui extends ScreenHandler {
     public WorldSelectionGui(int syncId, PlayerInventory playerInventory, Inventory inventory, ServerPlayerEntity player) {
         super(ScreenHandlerType.GENERIC_9X3, syncId);
         this.inventory = inventory;
+        this.player = player;
         this.enabledWorlds = new ArrayList<>();
         
         // Get all enabled worlds
@@ -87,6 +89,16 @@ public class WorldSelectionGui extends ScreenHandler {
         int totalWorlds = enabledWorlds.size();
         int totalPages = (int) Math.ceil((double) totalWorlds / WORLDS_PER_PAGE);
         
+        // Title bar (row 0) - Yellow glass panes like Admin Dashboard
+        for (int i = 0; i < 9; i++) {
+            ItemStack pane = new ItemStack(Items.YELLOW_STAINED_GLASS_PANE);
+            NbtCompound nbt = pane.getOrCreateNbt();
+            NbtCompound display = new NbtCompound();
+            display.putString("Name", Text.Serializer.toJson(Text.literal("§6§l▬▬ Resource Worlds ▬▬")));
+            nbt.put("display", display);
+            inventory.setStack(i, pane);
+        }
+        
         // Calculate which worlds to show on this page
         int startIndex = currentPage * WORLDS_PER_PAGE;
         int endIndex = Math.min(startIndex + WORLDS_PER_PAGE, totalWorlds);
@@ -103,75 +115,94 @@ public class WorldSelectionGui extends ScreenHandler {
             slot++;
         }
         
-        // Add "Return to Spawn" button at bottom left (slot 18)
+        // Bottom action bar (row 3, slots 18-26)
+        
+        // Return to Spawn button (slot 18)
         ItemStack spawnItem = new ItemStack(Items.RED_BED);
-        NbtCompound nbt = spawnItem.getOrCreateNbt();
-        NbtCompound display = new NbtCompound();
-        display.putString("Name", Text.Serializer.toJson(Text.literal("Return to Spawn").formatted(Formatting.GREEN)));
-        
-        NbtList lore = new NbtList();
-        lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Click to teleport to").formatted(Formatting.GRAY))));
-        lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("the overworld spawn").formatted(Formatting.GRAY))));
-        
-        display.put("Lore", lore);
-        nbt.put("display", display);
-        
+        setItemNameAndLore(spawnItem, "§a§lReturn to Spawn",
+            "§7Click to teleport to",
+            "§7the overworld spawn");
         inventory.setStack(18, spawnItem);
         
-        // Add Previous Page button at bottom left corner if not on first page (slot 19)
+        // Previous Page button (slot 19)
         if (currentPage > 0) {
-            ItemStack prevButton = new ItemStack(Items.COMMAND_BLOCK);
-            NbtCompound prevNbt = prevButton.getOrCreateNbt();
-            NbtCompound prevDisplay = new NbtCompound();
-            prevDisplay.putString("Name", Text.Serializer.toJson(Text.literal("◀ Previous Page").formatted(Formatting.YELLOW)));
-            
-            NbtList prevLore = new NbtList();
-            prevLore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Page " + currentPage + "/" + totalPages).formatted(Formatting.GRAY))));
-            
-            prevDisplay.put("Lore", prevLore);
-            prevNbt.put("display", prevDisplay);
-            
+            ItemStack prevButton = new ItemStack(Items.ARROW);
+            setItemNameAndLore(prevButton, "§e◀ Previous Page",
+                "§7Page " + currentPage + " of " + totalPages);
             inventory.setStack(19, prevButton);
         }
         
-        // Add Next Page button at bottom right corner if there are more pages (slot 25)
+        // Page Indicator (slot 22 - center)
+        if (totalPages > 1) {
+            ItemStack pageItem = new ItemStack(Items.PAPER);
+            setItemNameAndLore(pageItem, "§6§lPage " + (currentPage + 1) + " / " + totalPages,
+                "§7Showing " + worldsOnThisPage + " of " + totalWorlds + " worlds");
+            inventory.setStack(22, pageItem);
+        }
+        
+        // Next Page button (slot 25)
         if (currentPage < totalPages - 1) {
-            ItemStack nextButton = new ItemStack(Items.COMMAND_BLOCK);
-            NbtCompound nextNbt = nextButton.getOrCreateNbt();
-            NbtCompound nextDisplay = new NbtCompound();
-            nextDisplay.putString("Name", Text.Serializer.toJson(Text.literal("Next Page ▶").formatted(Formatting.YELLOW)));
-            
-            NbtList nextLore = new NbtList();
-            nextLore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Page " + (currentPage + 2) + "/" + totalPages).formatted(Formatting.GRAY))));
-            
-            nextDisplay.put("Lore", nextLore);
-            nextNbt.put("display", nextDisplay);
-            
+            ItemStack nextButton = new ItemStack(Items.ARROW);
+            setItemNameAndLore(nextButton, "§eNext Page ▶",
+                "§7Page " + (currentPage + 2) + " of " + totalPages);
             inventory.setStack(25, nextButton);
         }
         
-        // Add help/info command block at bottom right (slot 26)
-        ItemStack infoBlock = new ItemStack(Items.COMMAND_BLOCK);
-        NbtCompound infoNbt = infoBlock.getOrCreateNbt();
-        NbtCompound infoDisplay = new NbtCompound();
-        infoDisplay.putString("Name", Text.Serializer.toJson(Text.literal("Admin Commands").formatted(Formatting.GOLD)));
+        // Admin Dashboard button (slot 26) - ONLY show if player has permission
+        if (player != null && player.hasPermissionLevel(2)) {
+            ItemStack adminButton = new ItemStack(Items.NETHER_STAR);
+            setItemNameAndLore(adminButton, "§6§l⚙ Admin Dashboard",
+                "§7Click to open the",
+                "§7admin management panel",
+                "",
+                "§e§lManage all worlds");
+            inventory.setStack(26, adminButton);
+        }
+    }
+
+    private void setItemNameAndLore(ItemStack item, String name, String... loreLines) {
+        NbtCompound nbt = item.getOrCreateNbt();
+        NbtCompound display = new NbtCompound();
+        display.putString("Name", Text.Serializer.toJson(Text.literal(name)));
         
-        NbtList infoLore = new NbtList();
-        infoLore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Use: /timedharvest").formatted(Formatting.GRAY))));
-        infoLore.add(NbtString.of(Text.Serializer.toJson(Text.literal("For admin commands").formatted(Formatting.GRAY))));
+        if (loreLines.length > 0) {
+            NbtList lore = new NbtList();
+            for (String line : loreLines) {
+                lore.add(NbtString.of(Text.Serializer.toJson(Text.literal(line))));
+            }
+            display.put("Lore", lore);
+        }
         
-        infoDisplay.put("Lore", infoLore);
-        infoNbt.put("display", infoDisplay);
-        
-        inventory.setStack(26, infoBlock);
+        nbt.put("display", display);
     }
 
     private ItemStack createWorldItem(ModConfig.ResourceWorldConfig worldConfig) {
-        // Choose icon based on world type
+        // Null check
+        if (worldConfig == null) {
+            TimedHarvestMod.LOGGER.warn("Null world config in createWorldItem");
+            return new ItemStack(Items.BARRIER);
+        }
+        
+        // Check if dimension actually exists
+        boolean dimensionExists = false;
+        try {
+            // Try to create the identifier - if it fails, dimension name is malformed
+            new Identifier(worldConfig.dimensionName);
+            dimensionExists = true; // If we got here, the identifier is valid
+        } catch (Exception e) {
+            TimedHarvestMod.LOGGER.warn("Invalid dimension name: {}", worldConfig.dimensionName);
+        }
+        
+        // Choose icon based on world type and existence
         ItemStack item;
-        if (worldConfig.worldType.contains("nether")) {
+        String worldType = worldConfig.worldType != null ? worldConfig.worldType : "minecraft:overworld";
+        
+        if (!dimensionExists) {
+            // Use barrier block for non-existent dimensions
+            item = new ItemStack(Items.BARRIER);
+        } else if (worldType.contains("nether")) {
             item = new ItemStack(Items.NETHERRACK);
-        } else if (worldConfig.worldType.contains("end")) {
+        } else if (worldType.contains("end")) {
             item = new ItemStack(Items.END_STONE);
         } else {
             item = new ItemStack(Items.GRASS_BLOCK);
@@ -180,19 +211,31 @@ public class WorldSelectionGui extends ScreenHandler {
         // Set custom name using NBT
         NbtCompound nbt = item.getOrCreateNbt();
         NbtCompound display = new NbtCompound();
-        display.putString("Name", Text.Serializer.toJson(Text.literal(worldConfig.worldId).formatted(Formatting.YELLOW)));
+        String worldId = worldConfig.worldId != null ? worldConfig.worldId : "Unknown World";
+        
+        // Add warning color if dimension doesn't exist
+        Formatting nameColor = dimensionExists ? Formatting.YELLOW : Formatting.RED;
+        display.putString("Name", Text.Serializer.toJson(Text.literal(worldId).formatted(nameColor)));
         
         // Add lore
         NbtList lore = new NbtList();
-        lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("World Type: " + worldConfig.worldType).formatted(Formatting.GRAY))));
-        lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Reset: " + worldConfig.resetIntervalHours + " hours").formatted(Formatting.GRAY))));
         
-        if (worldConfig.worldBorderSize > 0) {
-            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Border: " + worldConfig.worldBorderSize + " blocks").formatted(Formatting.GRAY))));
+        if (!dimensionExists) {
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("⚠ NOT CREATED YET").formatted(Formatting.RED, Formatting.BOLD))));
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal(""))));
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Click for instructions").formatted(Formatting.GRAY))));
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("on how to create it").formatted(Formatting.GRAY))));
+        } else {
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("World Type: " + worldType).formatted(Formatting.GRAY))));
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Reset: " + worldConfig.resetIntervalHours + " hours").formatted(Formatting.GRAY))));
+            
+            if (worldConfig.worldBorderSize > 0) {
+                lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Border: " + worldConfig.worldBorderSize + " blocks").formatted(Formatting.GRAY))));
+            }
+            
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal(""))));
+            lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Click to teleport!").formatted(Formatting.GREEN))));
         }
-        
-        lore.add(NbtString.of(Text.Serializer.toJson(Text.literal(""))));
-        lore.add(NbtString.of(Text.Serializer.toJson(Text.literal("Click to teleport!").formatted(Formatting.GREEN))));
         
         display.put("Lore", lore);
         nbt.put("display", display);
@@ -213,6 +256,11 @@ public class WorldSelectionGui extends ScreenHandler {
         
         ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
         
+        // Ignore clicks on title bar (slots 0-8)
+        if (slotIndex >= 0 && slotIndex <= 8) {
+            return;
+        }
+        
         // Check if it's the spawn button (slot 18)
         if (slotIndex == 18 && clickedItem.getItem() == Items.RED_BED) {
             teleportToSpawn(serverPlayer);
@@ -221,7 +269,7 @@ public class WorldSelectionGui extends ScreenHandler {
         }
         
         // Check if it's the Previous Page button (slot 19)
-        if (slotIndex == 19 && clickedItem.getItem() == Items.COMMAND_BLOCK) {
+        if (slotIndex == 19 && clickedItem.getItem() == Items.ARROW) {
             if (currentPage > 0) {
                 currentPage--;
                 populateInventory();
@@ -229,8 +277,13 @@ public class WorldSelectionGui extends ScreenHandler {
             return;
         }
         
+        // Check if it's the page indicator (slot 22) - do nothing
+        if (slotIndex == 22 && clickedItem.getItem() == Items.PAPER) {
+            return;
+        }
+        
         // Check if it's the Next Page button (slot 25)
-        if (slotIndex == 25 && clickedItem.getItem() == Items.COMMAND_BLOCK) {
+        if (slotIndex == 25 && clickedItem.getItem() == Items.ARROW) {
             int totalPages = (int) Math.ceil((double) enabledWorlds.size() / WORLDS_PER_PAGE);
             if (currentPage < totalPages - 1) {
                 currentPage++;
@@ -239,10 +292,21 @@ public class WorldSelectionGui extends ScreenHandler {
             return;
         }
         
-        // Check if it's the info command block (slot 26)
-        if (slotIndex == 26 && clickedItem.getItem() == Items.COMMAND_BLOCK) {
+        // Check if it's the admin dashboard button (slot 26)
+        if (slotIndex == 26 && clickedItem.getItem() == Items.NETHER_STAR) {
+            // Check permission (double-check even though button shouldn't be visible)
+            if (!serverPlayer.hasPermissionLevel(2)) {
+                serverPlayer.sendMessage(Text.literal("§c§l✖ §cYou don't have permission to access the admin dashboard!"));
+                serverPlayer.closeHandledScreen();
+                return;
+            }
+            
+            // Open admin dashboard
             serverPlayer.closeHandledScreen();
-            serverPlayer.sendMessage(Text.literal("§6Use §e/timedharvest §6for admin commands!"));
+            serverPlayer.openHandledScreen(new net.minecraft.screen.SimpleNamedScreenHandlerFactory(
+                (syncId, inv, p) -> new AdminDashboardGui(syncId, inv, new net.minecraft.inventory.SimpleInventory(54), serverPlayer),
+                Text.literal("§6§lAdmin Dashboard")
+            ));
             return;
         }
         
@@ -282,7 +346,23 @@ public class WorldSelectionGui extends ScreenHandler {
         
         ServerWorld targetWorld = player.getServer().getWorld(dimensionKey);
         if (targetWorld == null) {
-            player.sendMessage(Text.literal("§cDimension '" + worldConfig.dimensionName + "' does not exist!"));
+            // Check if player has permission
+            boolean hasPermission = player.hasPermissionLevel(2);
+            
+            // Send helpful error message with fix instructions
+            player.sendMessage(Text.literal("§c§l✖ §cDimension '§e" + worldConfig.dimensionName + "§c' does not exist!"));
+            player.sendMessage(Text.literal(""));
+            player.sendMessage(Text.literal("§e§l⚙ To fix this issue:"));
+            
+            if (hasPermission) {
+                player.sendMessage(Text.literal("  §a1. §fRun: §6§l/timedharvest reset §e" + worldConfig.worldId));
+                player.sendMessage(Text.literal("  §a2. §7This will create the dimension and its datapack"));
+            } else {
+                player.sendMessage(Text.literal("  §7Ask an admin to run: §6§l/timedharvest reset §e" + worldConfig.worldId));
+            }
+            
+            player.sendMessage(Text.literal(""));
+            player.sendMessage(Text.literal("§8Tip: Use §7/reload §8after creating new worlds"));
             return;
         }
 
@@ -296,14 +376,16 @@ public class WorldSelectionGui extends ScreenHandler {
         // Teleport to spawn point
         BlockPos spawnPos = targetWorld.getSpawnPos();
         player.teleport(targetWorld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
-        player.sendMessage(Text.literal("§aTeleported to " + worldConfig.worldId + "!"));
+        player.sendMessage(Text.literal("§a§l✓ §aTeleported to §e§l" + worldConfig.worldId + "§a!"));
     }
 
     private void teleportToSpawn(ServerPlayerEntity player) {
         ServerWorld overworld = player.getServer().getOverworld();
         BlockPos spawnPos = overworld.getSpawnPos();
+        
         player.teleport(overworld, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, 0, 0);
-        player.sendMessage(Text.literal("§aTeleported to spawn!"));
+
+        player.sendMessage(Text.literal("§a§l✓ §aTeleported to §e§lspawn§a!"));
     }
 
     @Override
