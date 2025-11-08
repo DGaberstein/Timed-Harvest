@@ -395,6 +395,16 @@ public class AdminDashboardGui extends ScreenHandler {
             ItemStack deleteWorld = new ItemStack(Items.BARRIER);
             setItemNameAndLore(deleteWorld, "§cDelete World Files", "§cDelete world files and remove from config");
             inventory.setStack(20, deleteWorld);
+
+            // Permission level 2+ buttons: APPROVED and CANCEL
+            if (player.hasPermissionLevel(2)) {
+                ItemStack approve = new ItemStack(Items.LIME_CONCRETE);
+                setItemNameAndLore(approve, "§aAPPROVED", "§7Approve and close menu");
+                inventory.setStack(15, approve);
+                ItemStack cancel = new ItemStack(Items.RED_CONCRETE);
+                setItemNameAndLore(cancel, "§cCANCEL", "§7Cancel and close menu");
+                inventory.setStack(17, cancel);
+            }
             // Reset with New Seed
             ItemStack resetNewSeed = new ItemStack(Items.GLOWSTONE_DUST);
             setItemNameAndLore(resetNewSeed, "§eReset with New Seed", "§7Reset this world and generate a new random seed");
@@ -478,7 +488,7 @@ public class AdminDashboardGui extends ScreenHandler {
                     serverPlayer.closeHandledScreen();
                     if (worldConfig != null) {
                         String worldId = worldConfig.worldId;
-                        String cmd = String.format("timedharvest deleteworld %s", worldId);
+                        String cmd = String.format("timedharvest delete %s", worldId);
                         serverPlayer.getServer().getCommandManager().executeWithPrefix(serverPlayer.getCommandSource(), cmd);
                     }
                     break;
