@@ -1,6 +1,9 @@
+
 # Timed Harvest - Fabric Mod
 
 A Minecraft Fabric mod that creates automatically resetting resource worlds with configurable dimensions, custom seeds, and world borders. Players can teleport to dedicated mining, nether, or end worlds that regenerate on scheduled intervals to provide fresh resources while preserving the main world.
+
+---
 
 ## 🎯 Features
 
@@ -23,9 +26,33 @@ A Minecraft Fabric mod that creates automatically resetting resource worlds with
 - ✅ **Enhanced Create Command** - Full customization with worldType, seed, border, and structures
 - ✅ **Dimension Validation** - Prevents invalid dimension names with helpful error messages
 
-## � Documentation & Wiki
 
-Timed Harvest now uses a dedicated [GitHub Wiki](https://github.com/DGaberstein/Timed-Harvest/wiki) for all major documentation and guides. For the latest instructions, guides, and troubleshooting, please visit:
+## 📝 Requirements & Installation
+
+**Requirements:**
+- Minecraft 1.20.1
+- Fabric Loader 0.15.11+
+- Fabric API 0.92.2+
+- Java 21
+
+See the [Installation Guide](https://github.com/DGaberstein/Timed-Harvest/wiki/Installation) for step-by-step setup instructions.
+
+---
+
+## 📖 Quick Start
+
+1. Install all requirements above
+2. Download Timed Harvest and dependencies, place in your `mods/` folder
+3. Start your server/client
+4. Edit the generated config file at `config/timed-harvest.json` (see [Configuration Guide](https://github.com/DGaberstein/Timed-Harvest/wiki/Configuration))
+5. Use `/th` in-game to open the GUI
+6. Use `/timedharvest reload` to reload config after changes
+
+---
+
+## 📚 Documentation & Wiki
+
+Timed Harvest uses a dedicated [GitHub Wiki](https://github.com/DGaberstein/Timed-Harvest/wiki) for all major documentation and guides:
 
 - [Installation Guide](https://github.com/DGaberstein/Timed-Harvest/wiki/Installation)
 - [Configuration Guide](https://github.com/DGaberstein/Timed-Harvest/wiki/Configuration)
@@ -49,19 +76,72 @@ Timed Harvest now uses a dedicated [GitHub Wiki](https://github.com/DGaberstein/
 5. Edit the generated config file at `config/timed-harvest.json`
 6. Restart or use `/timedharvest reload`
 
+
+## 🎮 Usage
+
+- See the [Commands Reference](https://github.com/DGaberstein/Timed-Harvest/wiki/Commands) for all commands and admin features.
+- See the [GUI Guide](https://github.com/DGaberstein/Timed-Harvest/wiki/GUI-Guide) for a visual walkthrough.
+
 ## ⚙️ Configuration
 
-See the [Configuration Guide](https://github.com/DGaberstein/Timed-Harvest/wiki/Configuration) for full details, example configs, and option explanations.
+See the [Configuration Guide](https://github.com/DGaberstein/Timed-Harvest/wiki/Configuration) for full details, example configs, and option explanations. The config file is generated at `config/timed-harvest.json` after first run.
+
+## ❓ Troubleshooting & FAQ
+
+See the [Troubleshooting & FAQ](https://github.com/DGaberstein/Timed-Harvest/wiki/Troubleshooting-FAQ) for help with common issues, error messages, and solutions.
+
+## 📝 Changelog
+
+See the [Changelog](https://github.com/DGaberstein/Timed-Harvest/wiki/Changelog) for the latest updates and version history.
+
+---
 
 
-## 🎮 Commands
+## 📅 Example Configurations
 
-See the [Commands Reference](https://github.com/DGaberstein/Timed-Harvest/wiki/Commands) for a full list of commands, usage examples, and admin features.
+### Weekly Mining World (Small Border)
+```json
+{
+  "worldId": "mining_world",
+  "dimensionName": "timed_harvest:mining",
+  "resetIntervalHours": 168,
+  "worldType": "minecraft:overworld",
+  "seed": 0,
+  "generateStructures": true,
+  "worldBorderSize": 5000,
+  "enabled": true
+}
+```
 
+### Daily Nether Resources (Custom Seed)
+```json
+{
+  "worldId": "nether_resources",
+  "dimensionName": "timed_harvest:nether",
+  "resetIntervalHours": 24,
+  "worldType": "minecraft:the_nether",
+  "seed": 123456789,
+  "generateStructures": true,
+  "worldBorderSize": 3000,
+  "enabled": true
+}
+```
 
-## 🌍 World Customization
+### Monthly End World (No Border)
+```json
+{
+  "worldId": "end_resources",
+  "dimensionName": "timed_harvest:end",
+  "resetIntervalHours": 720,
+  "worldType": "minecraft:the_end",
+  "seed": -987654321,
+  "generateStructures": true,
+  "worldBorderSize": 0,
+  "enabled": true
+}
+```
 
-See the [Configuration Guide](https://github.com/DGaberstein/Timed-Harvest/wiki/Configuration) for details on seeds, world types, borders, and more.
+---
 
 ## 🔧 How It Works
 
@@ -142,6 +222,7 @@ Server Tick → Check Scheduler → Time Reached?
 }
 ```
 
+
 ## 🛠️ Development
 
 ### Building from Source
@@ -190,6 +271,7 @@ src/main/java/com/timedharvest/
 ## 📜 License
 
 MIT License - See LICENSE file for details
+
 
 ## 📚 Additional Documentation
 
